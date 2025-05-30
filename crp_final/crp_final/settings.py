@@ -318,7 +318,7 @@ CORS_ALLOWED_ORIGINS = [
 
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://leadstocompany-crp.onrender.com',
+    'https://leadstocompany-crp.onrender.com', 'https://charanbhim.duckdns.org'
 ]
 
 
