@@ -349,7 +349,7 @@ class CustomerInvoice(TenantScopedModel):
 # =============================================================================
 # InvoiceLine Model
 # =============================================================================
-class InvoiceLine(models.Model):
+class InvoiceLine(TenantScopedModel):
     invoice = models.ForeignKey(CustomerInvoice, verbose_name=_("Invoice"), on_delete=models.CASCADE,
                                 related_name='lines')
     description = models.TextField(_("Description/Service"))
@@ -444,27 +444,49 @@ class InvoiceLine(models.Model):
     def save(self, *args, **kwargs):
         self.line_total = (self.quantity or ZERO) * (self.unit_price or ZERO)
 
-        # full_clean is usually called by ModelForm.save().
-        # If saving directly, it's good practice to call it, unless explicitly skipped.
-        # TenantScopedModel might also call full_clean on its children if it's a base. Here it is not.
+        # --- START FIX: Ensure company is set from the parent invoice ---
+        if not self.company_id and self.invoice_id:
+            # self.invoice should be populated by the formset save process when associating with parent
+            parent_invoice = None
+            if hasattr(self, 'invoice') and self.invoice and self.invoice.pk:
+                parent_invoice = self.invoice
+            else:
+                # Fallback if self.invoice is not yet fully populated or is just an ID
+                try:
+                    parent_invoice = CustomerInvoice.objects.only('company_id', 'company').get(pk=self.invoice_id)
+                except CustomerInvoice.DoesNotExist:
+                    logger.error(
+                        f"InvoiceLine (PK:{self.pk or 'New'}) save error: Parent CustomerInvoice ID {self.invoice_id} not found."
+                    )
+                    # This situation should ideally not occur if the formset links correctly.
+                    # Raising an error or handling gracefully is needed.
+                    # For now, let full_clean catch it if company remains None, or raise explicitly:
+                    # raise DjangoValidationError({'invoice': _("Associated invoice not found for company assignment.")})
+
+            if parent_invoice and parent_invoice.company_id:
+                self.company = parent_invoice.company  # Assign the Company *instance*
+                logger.debug(
+                    f"InvoiceLine (PK:{self.pk or 'New'}): Set company to '{self.company}' from Invoice {parent_invoice.pk}")
+            elif parent_invoice and not parent_invoice.company_id:
+                logger.warning(
+                    f"InvoiceLine (PK:{self.pk or 'New'}): Parent Invoice {parent_invoice.pk} has no company_id.")
+            elif not parent_invoice:
+                logger.warning(
+                    f"InvoiceLine (PK:{self.pk or 'New'}): Could not retrieve parent invoice {self.invoice_id} for company assignment.")
+
+        # --- END FIX ---
+
         if not kwargs.pop('skip_model_full_clean', False):
-            # If invoice_id is not set (e.g. new line for new invoice via formset),
-            # full_clean might fail on the 'invoice' FK.
-            # The clean method is now designed to handle self.invoice_id being None for some checks.
             exclude_fields = []
             if not self.invoice_id and self._state.adding:
-                # Allow saving if part of a formset for a new parent; FK will be set later by formset.
-                # full_clean would fail on required 'invoice' FK if not excluded.
-                # However, our custom clean already handles some logic conditionally.
-                # For strictness, one might exclude 'invoice' here if it's known to be handled by formset.
-                # For now, let standard full_clean run; errors are fine if data is incomplete.
+                # This logic might have been intended to exclude 'invoice' if parent is new,
+                # but company is a separate concern.
                 pass
 
+            # Now, when full_clean is called, self.company should be set if self.invoice had a company.
             self.full_clean(exclude=exclude_fields or None)
 
-        super().save(*args, **kwargs)
-        # Parent invoice totals are recalculated at a higher level (e.g., service or signal)
-        # after all lines are potentially saved/deleted in a transaction.
+        super().save(*args, **kwargs)  # This will call TenantScopedModel.save()
         logger.debug(
             f"InvoiceLine {self.pk or 'Unsaved'} for Invoice {self.invoice_id or 'N/A'} saved. Line total: {self.line_total}."
         )
@@ -641,7 +663,7 @@ class CustomerPayment(TenantScopedModel):
 # =============================================================================
 # PaymentAllocation Model
 # =============================================================================
-class PaymentAllocation(models.Model):
+class PaymentAllocation(TenantScopedModel):
     payment = models.ForeignKey(CustomerPayment, verbose_name=_("Payment"), on_delete=models.CASCADE,
                                 related_name='allocations')
     invoice = models.ForeignKey(CustomerInvoice, verbose_name=_("Invoice"), on_delete=models.CASCADE,
