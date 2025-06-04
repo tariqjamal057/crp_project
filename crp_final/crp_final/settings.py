@@ -34,6 +34,7 @@ ALLOWED_HOSTS = [
     'leadstocompany-crp.onrender.com',  # Add your Render domain here
     '127.0.0.1',
     'localhost',
+    '150.242.202.207', 'charanbhim.duckdns.org',
 ]
 if BASE_DOMAIN and BASE_DOMAIN != 'localhost':
      ALLOWED_HOSTS.append(f'.{BASE_DOMAIN}') # e.g., '.example.com'
