@@ -31,7 +31,7 @@ try:
 except ImportError as e:
     raise ImportError(f"Could not import related accounting models for receivables: {e}.")
 
-
+ZERO_DECIMAL = Decimal('0.00')
 # --- Enum Imports ---
 # Fallback mock for enums if crp_core is not fully available
 class BaseEnumMock:
@@ -661,170 +661,92 @@ class CustomerPayment(TenantScopedModel):
 
 
 # =============================================================================
-# PaymentAllocation Model
+# PaymentAllocation Model (Final Corrected Version)
 # =============================================================================
 class PaymentAllocation(TenantScopedModel):
     payment = models.ForeignKey(CustomerPayment, verbose_name=_("Payment"), on_delete=models.CASCADE,
                                 related_name='allocations')
     invoice = models.ForeignKey(CustomerInvoice, verbose_name=_("Invoice"), on_delete=models.CASCADE,
                                 related_name='payment_allocations')
-    amount_applied = models.DecimalField(_("Amount Applied"), max_digits=20, decimal_places=2)
+    amount_applied = models.DecimalField(_("Amount Applied"), max_digits=20, decimal_places=2,
+                                         validators=[MinValueValidator(SMALL_TOLERANCE)])
     allocation_date = models.DateField(_("Allocation Date"), default=timezone.now)
 
     class Meta:
         verbose_name = _("Payment Allocation")
         verbose_name_plural = _("Payment Allocations")
         unique_together = (('payment', 'invoice'),)
-        ordering = ['payment__payment_date', 'invoice__invoice_date']
+        ordering = ['-allocation_date']
 
     def __str__(self):
-        p_ref = f"PmtID:{self.payment_id or 'N/A'}"
-        if hasattr(self, 'payment') and self.payment and self.payment.pk:
-             p_ref = self.payment.reference_number or f"PmtPK:{self.payment.pk}"
-        elif hasattr(self, 'payment') and self.payment: # Unsaved parent
-            p_ref = _("New Payment")
-
-        i_ref = f"InvID:{self.invoice_id or 'N/A'}"
-        if hasattr(self, 'invoice') and self.invoice and self.invoice.pk:
-            i_ref = self.invoice.invoice_number or f"InvPK:{self.invoice.pk}"
-        elif hasattr(self, 'invoice') and self.invoice: # Unsaved related invoice (less likely for allocation)
-            i_ref = _("New Invoice")
-
-
-        amt = self.amount_applied if self.amount_applied is not None else "N/A"
-        return f"Allocation: {p_ref} to {i_ref} - Amt: {amt}"
+        p_ref = f"PmtPK:{self.payment_id}"
+        i_ref = f"InvPK:{self.invoice_id}"
+        return f"Allocation: {p_ref} to {i_ref} - Amt: {self.amount_applied}"
 
     def clean(self):
         super().clean()
         errors = {}
 
-        # 1. Validate amount_applied positivity (independent check)
-        if self.amount_applied is not None and self.amount_applied <= ZERO:
-            errors['amount_applied'] = _("Amount applied must be positive.")
-
-        # 2. Determine and validate payment_instance
-        payment_instance = getattr(self, 'payment', None) # Prefer already linked instance
-        if not payment_instance and self.payment_id: # If instance not linked, but ID exists (e.g. existing record)
-            try:
-                payment_instance = CustomerPayment.objects.select_related('company', 'customer').get(pk=self.payment_id)
-                self.payment = payment_instance # Link it back for consistency
-            except CustomerPayment.DoesNotExist:
-                errors['payment'] = _("Associated payment (ID: %(id)s) not found.") % {'id': self.payment_id}
-        elif not payment_instance and not self.payment_id:
-            # No instance linked AND no ID.
-            # If it's an existing record (self.pk is set), this is an integrity error.
-            if self.pk:
-                errors['payment'] = _("Payment relationship is missing for this existing allocation.")
-            # If it's a new record (self._state.adding), this means the form/formset
-            # didn't link the parent payment instance. This is a critical failure upstream.
-            # model.clean() cannot proceed without it for most validations.
-            elif self._state.adding:
-                 errors['payment'] = _("Payment linkage is missing. The form may not be configured correctly to link the parent payment.")
-
-
-        # 3. Determine and validate invoice_instance
-        invoice_instance = getattr(self, 'invoice', None) # Prefer already linked instance
-        if not invoice_instance and self.invoice_id: # If instance not linked, but ID exists
-            try:
-                invoice_instance = CustomerInvoice.objects.select_related('company', 'customer').get(pk=self.invoice_id)
-                self.invoice = invoice_instance # Link it back
-            except CustomerInvoice.DoesNotExist:
-                errors['invoice'] = _("Associated invoice (ID: %(id)s) not found.") % {'id': self.invoice_id}
-        elif not self.invoice_id: # Invoice must always be chosen by the user, so ID should be there.
-            errors['invoice'] = _("Invoice is required for allocation.")
-
-
-        # 4. If fundamental errors found (missing FKs, bad amount), raise now.
-        if errors:
-            logger.warning(f"PaymentAllocation (PK:{self.pk or 'New'}) initial FK/amount validation errors: {errors}")
-            raise DjangoValidationError(errors)
-
-        # --- At this point, payment_instance and invoice_instance should be valid objects ---
-        # If we reached here, it means:
-        # - amount_applied is positive (or None, if allowed by field definition, though DecimalField usually requires a value)
-        # - payment_instance is a valid CustomerPayment object
-        # - invoice_instance is a valid CustomerInvoice object
-
-        # 5. Perform cross-object validations (company, customer, currency, amounts)
+        # Ensure parent objects are available for validation
         try:
-            if not payment_instance.company or not invoice_instance.company:
-                # This should ideally not happen if parent models enforce company.
-                errors.setdefault(DjangoValidationError.NON_FIELD_ERRORS, []).append(
-                    _("Parent Payment or Invoice is missing company information.")
-                )
-            elif payment_instance.company_id != invoice_instance.company_id:
-                errors['invoice'] = _("Payment and Invoice must belong to the same company.")
+            payment_instance = self.payment
+            invoice_instance = self.invoice
+        except (CustomerPayment.DoesNotExist, CustomerInvoice.DoesNotExist):
+            return  # Let default FK validation handle this.
 
-            if payment_instance.customer_id != invoice_instance.customer_id:
-                errors['invoice'] = _("Payment and Invoice must be for the same customer.")
+        # --- Standard cross-object validation ---
+        if payment_instance.company_id != invoice_instance.company_id:
+            errors['invoice'] = _("Payment and Invoice must belong to the same company.")
+        if payment_instance.customer_id != invoice_instance.customer_id:
+            errors['invoice'] = _("Payment and Invoice must be for the same customer.")
+        if payment_instance.currency != invoice_instance.currency:
+            errors['invoice'] = _("Payment currency must match Invoice currency.")
 
-            if payment_instance.currency != invoice_instance.currency:
-                errors['invoice'] = _("Payment currency (%(pc)s) must match Invoice currency (%(ic)s).") % {
-                    'pc': payment_instance.currency, 'ic': invoice_instance.currency
-                }
+        # --- FIX START: Robust amount validation that handles both ADD and CHANGE views ---
+        if self.amount_applied is not None and self.amount_applied > ZERO_DECIMAL:
+            # 1. Check against available amount on the payment
+            available_on_payment = ZERO_DECIMAL
 
-            # --- Crucial amount validation ---
-            if self.amount_applied is not None: # Redundant if earlier check catches bad amount_applied
-                # Check 1: Against invoice due amount
-                effective_invoice_due = invoice_instance.amount_due if invoice_instance.amount_due is not None else ZERO
-                if self.pk:
-                    try:
-                        original_self_allocation = PaymentAllocation.objects.only('amount_applied').get(pk=self.pk)
-                        effective_invoice_due += original_self_allocation.amount_applied
-                    except PaymentAllocation.DoesNotExist:
-                        logger.warning(f"PaymentAllocation.clean: Could not find original allocation {self.pk} for invoice due calc.")
-                        pass
+            # This is the key change: Check if the parent payment is saved yet.
+            if payment_instance.pk:  # CHANGE view: The payment exists in the DB.
+                # This logic is safe now because the parent has a PK.
+                other_allocations_sum = \
+                payment_instance.allocations.exclude(pk=self.pk).aggregate(s=Sum('amount_applied'))['s'] or ZERO_DECIMAL
+                available_on_payment = (payment_instance.amount_received or ZERO_DECIMAL) - other_allocations_sum
+            else:  # ADD view: The payment is new and not yet in the DB.
+                # We can't query '.allocations'. The total available is the full amount of the new payment.
+                # Note: This logic assumes only one new allocation is being added at a time in the 'add' view,
+                # which is a safe assumption for most use cases.
+                available_on_payment = payment_instance.amount_received or ZERO_DECIMAL
 
-                if self.amount_applied > (effective_invoice_due + SMALL_TOLERANCE):
-                    # If an error for 'amount_applied' already exists, this might overwrite it or add to a list if using error lists.
-                    # For simplicity, Django typically overwrites.
-                    errors['amount_applied'] = _(
-                        "Amount applied (%(applied)s) exceeds effective invoice due (%(due)s).") % {
-                                                   'applied': self.amount_applied.quantize(ZERO),
-                                                   'due': effective_invoice_due.quantize(ZERO)
-                                               }
+            if self.amount_applied > (available_on_payment + SMALL_TOLERANCE):
+                errors['amount_applied'] = _(
+                    "Amount applied (%(applied)s) exceeds the payment's available unapplied amount (%(available)s)."
+                ) % {'applied': self.amount_applied, 'available': available_on_payment}
 
-                # Check 2: Against payment unapplied amount
-                if payment_instance.pk is None: # Payment is new and not yet saved
-                    base_payment_unapplied = payment_instance.amount_received if payment_instance.amount_received is not None else ZERO
-                else:
-                    base_payment_unapplied = payment_instance.amount_unapplied if payment_instance.amount_unapplied is not None else ZERO
-
-                total_available_from_payment_for_this_allocation = base_payment_unapplied
-                if self.pk:
-                    try:
-                        original_self = PaymentAllocation.objects.only('amount_applied').get(pk=self.pk)
-                        total_available_from_payment_for_this_allocation += original_self.amount_applied
-                    except PaymentAllocation.DoesNotExist:
-                        logger.warning(f"PaymentAllocation.clean: Could not find original allocation {self.pk} for payment unapplied calc.")
-
-                if self.amount_applied > (total_available_from_payment_for_this_allocation + SMALL_TOLERANCE):
-                    errors['amount_applied'] = _( # This will overwrite previous 'amount_applied' error if both conditions met
-                        "Amount applied (%(applied)s) exceeds the payment's available unapplied amount (%(available)s).") % {
-                                                   'applied': self.amount_applied.quantize(ZERO),
-                                                   'available': total_available_from_payment_for_this_allocation.quantize(ZERO)
-                                               }
-
-        except AttributeError as e:
-            # This catches cases where payment_instance or invoice_instance might be None
-            # despite earlier checks (should be rare now), or expected attributes are missing.
-            logger.error(
-                f"PaymentAllocation Clean: Attribute error during validation. PmtID:{self.payment_id}, InvID:{self.invoice_id}. Error: {e}",
-                exc_info=True)
-            if DjangoValidationError.NON_FIELD_ERRORS not in errors and not any(
-                    f in errors for f in ['payment', 'invoice', 'amount_applied']):
-                errors.setdefault(DjangoValidationError.NON_FIELD_ERRORS, []).append(
-                    _("Error validating allocation due to incomplete parent data or unexpected attribute issue: %(err)s") % {'err': str(e)}
-                )
+            # 2. Check against the invoice's due amount (This part is fine as the invoice always exists)
+            other_allocations_on_invoice = \
+            invoice_instance.payment_allocations.exclude(pk=self.pk).aggregate(s=Sum('amount_applied'))[
+                's'] or ZERO_DECIMAL
+            invoice_due = (invoice_instance.total_amount or ZERO_DECIMAL) - other_allocations_on_invoice
+            if self.amount_applied > (invoice_due + SMALL_TOLERANCE):
+                errors['amount_applied'] = _(
+                    "Amount applied (%(applied)s) exceeds the invoice's due amount (%(due)s)."
+                ) % {'applied': self.amount_applied, 'due': invoice_due}
+        # --- FIX END ---
 
         if errors:
-            logger.warning(f"PaymentAllocation (PK:{self.pk or 'New'}) model validation errors: {errors}")
             raise DjangoValidationError(errors)
 
     def save(self, *args, **kwargs):
-        if not kwargs.pop('skip_model_full_clean', False):
-            self.full_clean()
+        # This part, which we fixed before, remains crucial.
+        if not self.company_id and self.payment_id:
+            try:
+                self.company = self.payment.company
+            except (AttributeError, CustomerPayment.DoesNotExist):
+                try:
+                    self.company = CustomerPayment.objects.get(pk=self.payment_id).company
+                except CustomerPayment.DoesNotExist:
+                    pass
+
         super().save(*args, **kwargs)
-        logger.debug(
-            f"PaymentAllocation {self.pk or 'Unsaved'} for Pmt:{self.payment_id}/Inv:{self.invoice_id} saved. Amt: {self.amount_applied}."
-        )

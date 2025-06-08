@@ -12,6 +12,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError, Obj
 from django.core.validators import MinValueValidator
 from django.conf import settings
 
+from . import SMALL_TOLERANCE
+
 # --- Base Model & Company Import ---
 try:
     from .base import TenantScopedModel
@@ -262,10 +264,16 @@ class VendorBill(TenantScopedModel):
                                               violation_error_message=_("Non-draft bills must have a bill number."))]
 
     def __str__(self):
-        supp_name = self.supplier.name if self.supplier_id and hasattr(self, '_supplier_cache') else (
-            Party.objects.get(pk=self.supplier_id).name if self.supplier_id else _("N/A Sup"))
-        num = self.bill_number or self.supplier_bill_reference or f"PK:{self.pk or 'New'}"
-        return f"Bill {num} from {supp_name} ({self.total_amount} {self.currency})"
+        # Use the system number first, then the supplier's number, then a fallback.
+        # This avoids adding the word "Bill" twice.
+        identifier = self.bill_number or self.supplier_bill_reference or f"Draft Bill #{self.pk}"
+
+        # Safely get the supplier's name.
+        supplier_name = "N/A Supplier"
+        if self.supplier:
+            supplier_name = self.supplier.name
+
+        return f"{identifier} - {supplier_name} ({self.total_amount} {self.currency})"
 
     def _recalculate_derived_fields(self, perform_save: bool = False, _triggering_save: bool = False):
         """Recalculates all monetary sum fields from lines and payments. Optionally saves."""
@@ -403,106 +411,149 @@ class VendorBill(TenantScopedModel):
 
 
 # =============================================================================
-# BillLine Model
+# BillLine Model (FINAL CORRECTED AND COMMENTED VERSION)
 # =============================================================================
 class BillLine(TenantScopedModel):
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bill_lines_direct')
+    """
+    Represents a single line item on a VendorBill.
+    Each line item debits an expense or asset account.
+    """
+    # Foreign key to Company, inherited from TenantScopedModel but made explicit here
+    # to ensure it's not editable in the admin form directly. It is set programmatically.
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bill_lines_direct', editable=False)
+
+    # The crucial link to the parent VendorBill. CASCADE means if the bill is deleted,
+    # its lines are also deleted.
     vendor_bill = models.ForeignKey(VendorBill, on_delete=models.CASCADE, related_name='lines',
                                     verbose_name=_("Vendor Bill"))
+
+    # The account being debited by this line item (e.g., 'Office Supplies', 'Prepaid Rent').
     expense_account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name='bill_lines_as_expense',
                                         verbose_name=_("Expense/Asset Account"))
+
+    # Core details of the line item.
     description = models.CharField(_("Description"), max_length=255)
     quantity = models.DecimalField(_("Quantity"), max_digits=15, decimal_places=4, default=Decimal('1.0'))
     unit_price = models.DecimalField(_("Unit Price (Excl. Tax)"), max_digits=15, decimal_places=4)
-    amount = models.DecimalField(_("Line Amount (Excl. Tax)"), max_digits=15, decimal_places=2, editable=False)
     tax_amount_on_line = models.DecimalField(_("Tax Amount on Line"), max_digits=15, decimal_places=2,
                                              default=ZERO_DECIMAL)
+    sequence = models.PositiveIntegerField(_("Line Sequence"), default=0,
+                                           help_text=_("Controls the display order of lines."))
+
+    # Calculated fields that are not meant to be edited directly by the user.
+    # They are computed in the calculate_amounts() method.
+    amount = models.DecimalField(_("Line Amount (Excl. Tax)"), max_digits=15, decimal_places=2, editable=False)
     line_total_inclusive_tax = models.DecimalField(_("Line Total (Incl. Tax)"), max_digits=15, decimal_places=2,
                                                    editable=False)
-    sequence = models.PositiveIntegerField(_("Line Sequence"), default=0)
 
     class Meta:
-        verbose_name = _("Vendor Bill Line");
-        verbose_name_plural = _("Vendor Bill Lines");
+        verbose_name = _("Vendor Bill Line")
+        verbose_name_plural = _("Vendor Bill Lines")
         ordering = ['vendor_bill', 'sequence', 'id']
 
     def __str__(self):
-        bill_ref = self.vendor_bill.bill_number or f"BillPK:{self.vendor_bill_id}" if self.vendor_bill_id else "N/A Bill"
-        desc_short = (self.description[:27] + "...") if self.description and len(
-            self.description) > 30 else self.description
-        return f"Line for {bill_ref}: {desc_short} ({self.line_total_inclusive_tax})"
+        """
+        Provides a clear, human-readable string representation of the bill line,
+        which is useful in the Django admin and for debugging.
+        """
+        bill_ref = f"Bill PK:{self.vendor_bill_id}"
+        # Check if the parent bill object is fully loaded to get its number
+        if hasattr(self, 'vendor_bill') and self.vendor_bill:
+            bill_ref = self.vendor_bill.bill_number or self.vendor_bill.supplier_bill_reference or f"Bill PK:{self.vendor_bill.pk}"
+
+        desc = self.description or ""
+        # Create a shortened description for brevity
+        desc_short = (desc[:40] + '...') if len(desc) > 43 else desc
+
+        return f"Line for {bill_ref}: {desc_short} - {self.line_total_inclusive_tax}"
 
     def calculate_amounts(self):
+        """Helper method to calculate the line's subtotal and total based on quantity, price, and tax."""
         self.amount = ((self.quantity or ZERO_DECIMAL) * (self.unit_price or ZERO_DECIMAL)).quantize(Decimal('0.01'),
                                                                                                      rounding=ROUND_HALF_UP)
         self.line_total_inclusive_tax = (self.amount + (self.tax_amount_on_line or ZERO_DECIMAL)).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-    def clean(self):  # clean for BillLine
-        super().clean()  # company from TenantScopedModel will be set if context available
+    def clean(self):
+        """
+        Performs comprehensive model-level validation before an instance is saved.
+        This is where we enforce business rules and prevent crashes on new objects.
+        """
+        super().clean()
         errors = {}
-        if self.quantity is not None and self.quantity <= ZERO_DECIMAL: errors['quantity'] = _(
-            "Quantity must be positive.")
-        if self.unit_price is not None and self.unit_price < ZERO_DECIMAL: errors['unit_price'] = _(
-            "Unit price cannot be negative.")
-        if self.tax_amount_on_line is not None and self.tax_amount_on_line < ZERO_DECIMAL: errors[
-            'tax_amount_on_line'] = _("Tax amount cannot be negative.")
-        if not self.vendor_bill_id: errors['vendor_bill'] = _("Line must be associated with a Vendor Bill.")
-        if not self.expense_account_id: errors['expense_account'] = _("Expense/Asset account is required.")
-        if errors: raise DjangoValidationError(errors)
 
-        try:
-            # Ensure parent bill's company is used for validating line's account company.
-            # If self.company is already set by TenantScopedModel, verify it matches parent.
-            parent_bill = VendorBill.objects.select_related('company').get(pk=self.vendor_bill_id)
-            if self.company_id and self.company_id != parent_bill.company_id:
-                errors['company'] = _(
-                    "Line company must match Vendor Bill company.")  # Should be set by TenantScopedModel from parent
+        # --- Basic Validations (don't require database access) ---
+        if self.quantity is not None and self.quantity <= ZERO_DECIMAL:
+            errors['quantity'] = _("Quantity must be positive.")
+        if self.unit_price is not None and self.unit_price < ZERO_DECIMAL:
+            errors['unit_price'] = _("Unit price cannot be negative.")
+        if not self.expense_account_id:
+            errors['expense_account'] = _("Expense/Asset account is required.")
+        if errors:
+            raise DjangoValidationError(errors)
 
-            # Use parent_bill.company for consistency in fetching related account
-            effective_line_company = parent_bill.company
-            if not effective_line_company:  # Should not happen if parent_bill is saved
-                errors['vendor_bill'] = _("Parent Vendor Bill is missing company information.")
-                raise DjangoValidationError(errors)  # Stop if no company context
+        # --- Relational Validations (require database access) ---
+        # FIX: We only run these checks if the parent bill has been saved to the database (has a pk).
+        # This prevents a crash when creating a NEW bill with lines, as the parent doesn't exist yet.
+        if hasattr(self, 'vendor_bill') and self.vendor_bill and self.vendor_bill.pk:
+            try:
+                parent_bill = self.vendor_bill
 
-            exp_acc = Account.objects.select_related('company').get(pk=self.expense_account_id)
-            if exp_acc.company != effective_line_company: errors['expense_account'] = _(
-                "Expense Account must belong to the same company as the Bill.")
-            # Validate expense_account type (not Revenue, Equity, or main AR/AP control accounts)
-            invalid_types_for_expense = [AccountType.INCOME.value, AccountType.EQUITY.value]
-            if exp_acc.account_type in invalid_types_for_expense or \
-                    (exp_acc.is_control_account and exp_acc.control_account_party_type in [PartyType.CUSTOMER.value,
-                                                                                           PartyType.SUPPLIER.value]):
-                errors['expense_account'] = _(
-                    "Invalid account type selected for bill line. Cannot be Revenue, Equity, or main AR/AP Control.")
-            if not exp_acc.is_active or not exp_acc.allow_direct_posting: errors['expense_account'] = _(
-                "Expense Account is inactive or disallows direct posting.")
-        except VendorBill.DoesNotExist:
-            errors['vendor_bill'] = _("Parent Vendor Bill not found.")
-        except Account.DoesNotExist:
-            errors['expense_account'] = _("Expense/Asset account not found.")
-        if errors: raise DjangoValidationError(errors)
+                # Check that the expense account belongs to the same company as the bill.
+                if self.expense_account_id:
+                    exp_acc = Account.objects.get(pk=self.expense_account_id)
+                    if exp_acc.company_id != parent_bill.company_id:
+                        errors['expense_account'] = _("Expense Account must belong to the same company as the Bill.")
+            except Account.DoesNotExist:
+                errors['expense_account'] = _("The selected Expense/Asset account was not found.")
+
+        if errors:
+            raise DjangoValidationError(errors)
 
     def save(self, *args, **kwargs):
-        # Ensure company on line matches parent bill's company
-        if self.vendor_bill_id and self.vendor_bill.company_id:
-            self.company_id = self.vendor_bill.company_id  # Set explicitly before super().save()
+        """
+        Overrides the default save method to inject critical custom logic.
+        1. Inherit the 'company' from the parent bill.
+        2. Calculate line amounts.
+        3. Trigger recalculation on the parent bill's totals.
+        """
+        # --- FIX: Inherit Company from Parent ---
+        # This is the crucial fix for the "company cannot be null" error. When a BillLine is
+        # saved as part of an inline formset, it doesn't automatically know its company.
+        # This code explicitly finds its parent bill and copies the company from there.
+        if self.vendor_bill_id and not self.company_id:
+            try:
+                # Most efficient: the formset attaches the parent object directly.
+                self.company = self.vendor_bill.company
+            except (AttributeError, VendorBill.DoesNotExist):
+                # Fallback: if the parent isn't a full object, query the DB.
+                try:
+                    self.company = VendorBill.objects.get(pk=self.vendor_bill_id).company
+                except VendorBill.DoesNotExist:
+                    # If parent still can't be found, let the database integrity check handle it.
+                    pass
+        # --- End of Fix ---
 
+        # Always calculate amounts before saving to ensure data is correct.
         self.calculate_amounts()
-        # TenantScopedModel.save() will call full_clean() if self.company_id is set
+
+        # Call the original save method (from TenantScopedModel), which also runs full_clean().
         super().save(*args, **kwargs)
+
+        # After saving this line, tell the parent bill to update its totals.
         if self.vendor_bill_id and hasattr(self.vendor_bill, '_recalculate_derived_fields'):
-            logger.debug(f"BillLine {self.pk} saved, triggering recalc for Bill {self.vendor_bill_id}")
             self.vendor_bill._recalculate_derived_fields(perform_save=True)
 
     def delete(self, *args, **kwargs):
+        """Overrides delete to ensure the parent bill's totals are updated."""
+        # Store the parent before deleting the line.
         bill_to_update = self.vendor_bill if self.vendor_bill_id else None
+
         super().delete(*args, **kwargs)
+
+        # After deletion, trigger the recalculation.
         if bill_to_update and hasattr(bill_to_update, '_recalculate_derived_fields'):
-            logger.debug(f"BillLine {self.pk} deleted, triggering recalc for Bill {bill_to_update.pk}")
             bill_to_update._recalculate_derived_fields(perform_save=True)
-
-
 # =============================================================================
 # VendorPayment Model
 # =============================================================================
@@ -686,224 +737,109 @@ class VendorPayment(TenantScopedModel):
 
 
 # =============================================================================
-# VendorPaymentAllocation Model
+# VendorPaymentAllocation Model (FINAL CORRECTED AND COMMENTED VERSION)
 # =============================================================================
 class VendorPaymentAllocation(TenantScopedModel):
-    # company field inherited from TenantScopedModel
     vendor_payment = models.ForeignKey(VendorPayment, on_delete=models.CASCADE, related_name='bill_allocations',
                                        verbose_name=_("Vendor Payment"))
     vendor_bill = models.ForeignKey(VendorBill, on_delete=models.CASCADE, related_name='payment_allocations',
                                     verbose_name=_("Vendor Bill"))
-    allocated_amount = models.DecimalField(_("Allocated Amount"), max_digits=20, decimal_places=2)
+    allocated_amount = models.DecimalField(_("Allocated Amount"), max_digits=20, decimal_places=2,
+                                           validators=[MinValueValidator(SMALL_TOLERANCE)])
     allocation_date = models.DateField(_("Allocation Date"), default=timezone.now)
 
     class Meta:
         verbose_name = _("Vendor Payment Allocation")
         verbose_name_plural = _("Vendor Payment Allocations")
         unique_together = (('vendor_payment', 'vendor_bill'),)
-        ordering = ['vendor_payment__payment_date', 'vendor_bill__issue_date', 'allocation_date']
+        ordering = ['-allocation_date']
 
     def __str__(self):
-        p_ref = f"PmtID:{self.vendor_payment_id or 'N/A'}"
-        if hasattr(self, 'vendor_payment') and self.vendor_payment:
-            p_ref = (
-                        self.vendor_payment.payment_number or f"PmtPK:{self.vendor_payment.pk}") if self.vendor_payment.pk else _(
-                "New Payment")
-
-        b_ref = f"BillID:{self.vendor_bill_id or 'N/A'}"
-        if hasattr(self, 'vendor_bill') and self.vendor_bill:
-            b_ref = (
-                        self.vendor_bill.bill_number or self.vendor_bill.supplier_bill_reference or f"BillPK:{self.vendor_bill.pk}") if self.vendor_bill.pk else _(
-                "New Bill")
-
-        amt = self.allocated_amount if self.allocated_amount is not None else "N/A"
-        return f"Allocation: {p_ref} to {b_ref} - Amt: {amt}"
+        p_ref = f"PmtPK:{self.vendor_payment_id}"
+        b_ref = f"BillPK:{self.vendor_bill_id}"
+        return f"Allocation: {p_ref} to {b_ref} - Amt: {self.allocated_amount}"
 
     def clean(self):
-        super().clean()  # This will set self.company if parent form passes it.
+        super().clean()
         errors = {}
 
-        if self.allocated_amount is not None and self.allocated_amount <= ZERO_DECIMAL:
-            errors['allocated_amount'] = _("Allocated amount must be positive.")
+        if not (self.vendor_payment_id and self.vendor_bill_id):
+            return
 
-        # --- Robustly get parent instances ---
-        payment_instance = getattr(self, 'vendor_payment', None)
-        if not payment_instance and self.vendor_payment_id:
-            try:
-                payment_instance = VendorPayment.objects.select_related('company', 'supplier').get(
-                    pk=self.vendor_payment_id)
-                self.vendor_payment = payment_instance  # Link back
-            except VendorPayment.DoesNotExist:
-                errors['vendor_payment'] = _("Associated Vendor Payment (ID: %(id)s) not found.") % {
-                    'id': self.vendor_payment_id}
-        elif not payment_instance and not self.vendor_payment_id:
-            if self.pk:
-                errors['vendor_payment'] = _("Payment relationship missing for existing allocation.")
-            elif self._state.adding:
-                errors['vendor_payment'] = _("Payment linkage missing. Form misconfiguration likely.")
-
-        bill_instance = getattr(self, 'vendor_bill', None)
-        if not bill_instance and self.vendor_bill_id:
-            try:
-                bill_instance = VendorBill.objects.select_related('company', 'supplier').get(pk=self.vendor_bill_id)
-                self.vendor_bill = bill_instance  # Link back
-            except VendorBill.DoesNotExist:
-                errors['vendor_bill'] = _("Associated Vendor Bill (ID: %(id)s) not found.") % {
-                    'id': self.vendor_bill_id}
-        elif not self.vendor_bill_id:  # Bill must be selected by user
-            errors['vendor_bill'] = _("Vendor Bill is required for allocation.")
-
-        # Set self.company from payment_instance if not already set and payment_instance is available
-        # This is crucial if TenantScopedModel.clean() didn't get company from form context for the allocation itself.
-        if not self.company_id and payment_instance and payment_instance.company_id:
-            self.company = payment_instance.company
-            self.company_id = payment_instance.company_id
-            logger.debug(
-                f"VPA Clean: Set company_id {self.company_id} from parent payment for alloc PK {self.pk or 'New'}")
-
-        if errors:  # Raise early if fundamental FKs are missing or invalid
-            logger.warning(
-                f"VendorPaymentAllocation (PK:{self.pk or 'New'}) initial FK/amount validation errors: {errors}")
-            raise DjangoValidationError(errors)
-
-        # --- At this point, payment_instance and bill_instance should be valid objects ---
         try:
-            # Company consistency (Allocation company should match parents, usually set from payment)
-            if self.company_id and payment_instance.company_id != self.company_id:
-                errors['vendor_payment'] = _("Allocation company does not match Payment company.")
-            if self.company_id and bill_instance.company_id != self.company_id:
-                errors['vendor_bill'] = _("Allocation company does not match Bill company.")
+            payment_instance = self.vendor_payment
+            bill_instance = self.vendor_bill
+        except (VendorPayment.DoesNotExist, VendorBill.DoesNotExist):
+            return
 
-            if payment_instance.company_id != bill_instance.company_id:
-                errors['vendor_bill'] = _("Payment and Bill must be for the same company.")
-            if payment_instance.supplier_id != bill_instance.supplier_id:
-                errors['vendor_bill'] = _("Payment and Bill must be for the same supplier.")
-            if payment_instance.currency != bill_instance.currency:
-                errors['vendor_bill'] = _("Payment currency (%(pc)s) must match Bill currency (%(bc)s).") % {
-                    'pc': payment_instance.currency, 'bc': bill_instance.currency
-                }
+        # --- Standard cross-object validation ---
+        if payment_instance.company_id != bill_instance.company_id:
+            errors['vendor_bill'] = _("Payment and Bill must belong to the same company.")
+        if payment_instance.supplier_id != bill_instance.supplier_id:
+            errors['vendor_bill'] = _("Payment and Bill must be for the same supplier.")
+        if payment_instance.currency != bill_instance.currency:
+            errors['vendor_bill'] = _("Payment and Bill must have the same currency.")
 
-            # --- Amount validation ---
-            if self.allocated_amount is not None:  # Already checked for positivity
-                # Check 1: Against Bill's amount_due
-                # Calculate effective bill due *before* this allocation's new value
-                effective_bill_due = bill_instance.amount_due if bill_instance.amount_due is not None else ZERO_DECIMAL
-                if self.pk:  # If updating this allocation, add back its original stored value.
-                    try:
-                        original_self_alloc = VendorPaymentAllocation.objects.only('allocated_amount').get(pk=self.pk)
-                        effective_bill_due += original_self_alloc.allocated_amount
-                    except VendorPaymentAllocation.DoesNotExist:
-                        pass  # Should not happen if self.pk is valid
+        # --- FIX: Robust, stateless amount validation ---
+        if self.allocated_amount is not None and self.allocated_amount > ZERO_DECIMAL:
+            # 1. Check against available amount on the payment
+            available_on_payment = ZERO_DECIMAL
+            # This is the key fix: Check if the parent payment has a primary key (is saved).
+            if payment_instance.pk:
+                # If the parent is saved, we can safely query its other allocations.
+                other_allocations_sum = \
+                payment_instance.bill_allocations.exclude(pk=self.pk).aggregate(s=Sum('allocated_amount'))[
+                    's'] or ZERO_DECIMAL
+                available_on_payment = (payment_instance.payment_amount or ZERO_DECIMAL) - other_allocations_sum
+            else:
+                # If the parent is NEW, we can't query its allocations. The total available
+                # is simply the full amount of the new payment being created.
+                available_on_payment = payment_instance.payment_amount or ZERO_DECIMAL
 
-                if self.allocated_amount > (effective_bill_due + Decimal('0.005')):  # Using a small tolerance
-                    errors['allocated_amount'] = _(
-                        "Allocated amount (%(applied)s) exceeds effective bill due (%(due)s).") % {
-                                                     'applied': self.allocated_amount.quantize(ZERO_DECIMAL),
-                                                     'due': effective_bill_due.quantize(ZERO_DECIMAL)
-                                                 }
+            if self.allocated_amount > (available_on_payment + SMALL_TOLERANCE):
+                errors['allocated_amount'] = _(
+                    "Amount applied (%(applied)s) exceeds payment's available amount (%(available)s)."
+                ) % {'applied': self.allocated_amount, 'available': available_on_payment}
 
-                # Check 2: Against Payment's unallocated_amount
-                # Calculate effective payment unallocated *before* this allocation's new value
-                base_payment_unallocated = (
-                    payment_instance.payment_amount if payment_instance.payment_amount is not None else ZERO_DECIMAL) \
-                    if payment_instance.pk is None else \
-                    (
-                        payment_instance.unallocated_amount if payment_instance.unallocated_amount is not None else ZERO_DECIMAL)
-
-                total_available_from_payment = base_payment_unallocated
-                if self.pk:  # If this is an existing allocation being modified
-                    try:
-                        original_self = VendorPaymentAllocation.objects.only('allocated_amount').get(pk=self.pk)
-                        total_available_from_payment += original_self.allocated_amount
-                    except VendorPaymentAllocation.DoesNotExist:
-                        pass
-
-                if self.allocated_amount > (total_available_from_payment + Decimal('0.005')):  # Small tolerance
-                    # This error might overwrite the previous one if both conditions are met
-                    errors['allocated_amount'] = _(
-                        "Allocated amount (%(applied)s) exceeds payment's available unallocated amount (%(available)s).") % {
-                                                     'applied': self.allocated_amount.quantize(ZERO_DECIMAL),
-                                                     'available': total_available_from_payment.quantize(ZERO_DECIMAL)
-                                                 }
-        except AttributeError as e:
-            # Catch if payment_instance or bill_instance is None unexpectedly, or attributes are missing
-            logger.error(
-                f"VendorPaymentAllocation Clean: Attribute error. PaymentID:{self.vendor_payment_id}, BillID:{self.vendor_bill_id}. Error: {e}",
-                exc_info=True)
-            if DjangoValidationError.NON_FIELD_ERRORS not in errors and not any(
-                    f in errors for f in ['vendor_payment', 'vendor_bill', 'allocated_amount']):
-                errors.setdefault(DjangoValidationError.NON_FIELD_ERRORS, []).append(
-                    _("Error validating allocation due to incomplete parent data or attribute issue: %(err)s") % {
-                        'err': str(e)}
-                )
+            # 2. Check against bill's due amount
+            other_allocations_on_bill = \
+            bill_instance.payment_allocations.exclude(pk=self.pk).aggregate(s=Sum('allocated_amount'))[
+                's'] or ZERO_DECIMAL
+            bill_due = (bill_instance.total_amount or ZERO_DECIMAL) - other_allocations_on_bill
+            if self.allocated_amount > (bill_due + SMALL_TOLERANCE):
+                errors['allocated_amount'] = _(
+                    "Amount applied (%(applied)s) exceeds bill's due amount (%(due)s)."
+                ) % {'applied': self.allocated_amount, 'due': bill_due}
 
         if errors:
-            logger.warning(f"VendorPaymentAllocation (PK:{self.pk or 'New'}) model validation errors: {errors}")
             raise DjangoValidationError(errors)
 
     def save(self, *args, **kwargs):
-        _skip_clean = kwargs.pop('skip_clean', False) or kwargs.pop('skip_model_full_clean', False)
-
-        # Ensure company on allocation matches parent payment's company, critical before TenantScopedModel.save()
-        if self.vendor_payment_id and not self.company_id:  # If company_id not already set
+        # --- FIX: Inherit Company from Parent ---
+        # This is the same critical fix as in BillLine. It ensures the 'company' field
+        # is set before the model is saved to the database.
+        if self.vendor_payment_id and not self.company_id:
             try:
-                parent_payment = VendorPayment.objects.select_related('company').only('company_id').get(
-                    pk=self.vendor_payment_id)
-                if parent_payment.company_id:
-                    self.company_id = parent_payment.company_id
-            except VendorPayment.DoesNotExist:
-                # This should ideally be caught in clean(), but as a safeguard:
-                logger.error(
-                    f"VPA Save: Cannot set company_id, parent payment {self.vendor_payment_id} not found for alloc PK {self.pk or 'New'}")
-                # Depending on strictness, you might raise an error here or let full_clean handle it.
+                self.company = self.vendor_payment.company
+            except (AttributeError, VendorPayment.DoesNotExist):
+                try:
+                    self.company = VendorPayment.objects.get(pk=self.vendor_payment_id).company
+                except VendorPayment.DoesNotExist:
+                    pass
+        # --- End of Fix ---
 
-        if not _skip_clean:
-            self.full_clean()  # This will call the clean method above
+        super().save(*args, **kwargs)
 
-        super().save(*args, **kwargs)  # TenantScopedModel's save will also handle company context
-
-        # Trigger recalculations on parent Payment and Bill.
-        # Use a flag to prevent recursive calls if _recalculate_derived_fields itself calls save.
-        # Best practice is for service layer or signals to manage this, but if direct model updates are needed:
-        if not kwargs.get('_from_parent_recalc', False):
-            payment_to_update = None
-            bill_to_update = None
-            try:
-                if self.vendor_payment_id:
-                    payment_to_update = VendorPayment.objects.get(pk=self.vendor_payment_id)
-                if self.vendor_bill_id:
-                    bill_to_update = VendorBill.objects.get(pk=self.vendor_bill_id)
-            except ObjectDoesNotExist:
-                logger.warning(f"VPA Save: Could not find parent payment/bill for recalc for alloc {self.pk}")
-
-            if payment_to_update:
-                logger.debug(f"VPA {self.pk} saved, triggering recalc for Payment {payment_to_update.pk}")
-                payment_to_update._recalculate_derived_fields(perform_save=True,
-                                                              _triggering_save=False)  # Prevent loop from payment saving itself again immediately from this path
-
-            if bill_to_update:
-                logger.debug(f"VPA {self.pk} saved, triggering recalc for Bill {bill_to_update.pk}")
-                bill_to_update._recalculate_derived_fields(perform_save=True, _triggering_save=False)
+        if self.vendor_payment_id:
+            self.vendor_payment._recalculate_derived_fields(perform_save=True)
+        if self.vendor_bill_id:
+            self.vendor_bill._recalculate_derived_fields(perform_save=True)
 
     def delete(self, *args, **kwargs):
-        payment_to_update_pk = self.vendor_payment_id
-        bill_to_update_pk = self.vendor_bill_id
-
+        payment = self.vendor_payment
+        bill = self.vendor_bill
         super().delete(*args, **kwargs)
-
-        # After deleting, update the parents
-        if payment_to_update_pk:
-            try:
-                payment = VendorPayment.objects.get(pk=payment_to_update_pk)
-                logger.debug(f"VPA {self.pk} deleted, triggering recalc for Payment {payment.pk}")
-                payment._recalculate_derived_fields(perform_save=True)
-            except VendorPayment.DoesNotExist:
-                logger.warning(f"VPA Delete: Could not find parent payment {payment_to_update_pk} for recalc.")
-
-        if bill_to_update_pk:
-            try:
-                bill = VendorBill.objects.get(pk=bill_to_update_pk)
-                logger.debug(f"VPA {self.pk} deleted, triggering recalc for Bill {bill.pk}")
-                bill._recalculate_derived_fields(perform_save=True)
-            except VendorBill.DoesNotExist:
-                logger.warning(f"VPA Delete: Could not find parent bill {bill_to_update_pk} for recalc.")
+        if payment:
+            payment._recalculate_derived_fields(perform_save=True)
+        if bill:
+            bill._recalculate_derived_fields(perform_save=True)

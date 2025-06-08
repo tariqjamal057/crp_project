@@ -449,114 +449,106 @@ class CustomerInvoiceAdmin(TenantAccountingModelAdmin):
 
 
 # =============================================================================
-# PaymentAllocation Inline Admin (Corrected and Enhanced)
+# PaymentAllocation Inline Admin
 # =============================================================================
 class PaymentAllocationInline(admin.TabularInline):
     model = PaymentAllocation
-    fields = ('invoice', 'amount_applied', 'allocation_date')  # 'invoice' is the selection field
-    readonly_fields = ()  # 'invoice' should be editable
+    fields = ('invoice', 'amount_applied', 'allocation_date')
+    readonly_fields = ()
     extra = 1
-    autocomplete_fields = ['invoice']  # Enables autocomplete for the 'invoice' field
+    autocomplete_fields = ['invoice']
     verbose_name = _("Invoice Allocation")
     verbose_name_plural = _("Invoice Allocations")
     classes = ['collapse'] if not settings.DEBUG else []
 
-    def _get_parent_payment_context(self, request: HttpRequest) -> Optional[CustomerPayment]:
-        return getattr(request, '_current_parent_payment_for_alloc_inline', None)
-
-    def _get_company_customer_currency_for_alloc_filter(self, request: HttpRequest,
-                                                        parent_payment: Optional[CustomerPayment]) -> \
-            Tuple[Optional[Company], Optional[Party], Optional[str]]:
-        company: Optional[Company] = None
-        customer: Optional[Party] = None
-        currency: Optional[str] = None
-
-        if parent_payment and parent_payment.pk:  # Existing parent
-            company = parent_payment.company
-            customer = parent_payment.customer
-            currency = parent_payment.currency
-        elif request.method == 'POST':  # New parent, form submitted
-            company_pk = request.POST.get('company')
-            customer_pk = request.POST.get('customer')
-            currency_val = request.POST.get('currency')
-            if company_pk: company = Company.objects.filter(pk=company_pk).first()
-            if customer_pk and company: customer = Party.objects.filter(pk=customer_pk, company=company,
-                                                                        party_type=getattr(CorePartyType, 'CUSTOMER',
-                                                                                           'CUSTOMER')).first()
-            if currency_val: currency = currency_val
-        else:  # New parent, GET request
-            req_company = getattr(request, 'company', None)
-            if isinstance(req_company, Company): company = req_company
-        return company, customer, currency
-
     def get_formset(self, request: Any, obj: Optional[CustomerPayment] = None, **kwargs: Any) -> Any:
-        request._current_parent_payment_for_alloc_inline = obj
+        logger.debug("=" * 50)
+        logger.debug(f"[PaymentAllocationInline.get_formset] Called. Request method: {request.method}")
+
         formset = super().get_formset(request, obj, **kwargs)
-        if hasattr(formset.form, 'base_fields') and 'invoice' in formset.form.base_fields:
-            formset.form.base_fields['invoice'].label = _('Invoice (Current Due)')
-        elif hasattr(formset.form, 'fields') and 'invoice' in formset.form.fields:
-            formset.form.fields['invoice'].label = _('Invoice (Current Due)')
-        return formset
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == "invoice":
-            parent_payment = self._get_parent_payment_context(request)
-            parent_company, parent_customer, parent_currency = self._get_company_customer_currency_for_alloc_filter(
-                request, parent_payment)
+        company, customer, currency = None, None, None
 
+        if obj and obj.pk:  # CHANGE VIEW - Easy case, use the existing object
+            logger.debug("Context source: Existing object (change_view)")
+            company = obj.company
+            customer = obj.customer
+            currency = obj.currency
+        else:  # ADD VIEW - This is the tricky case
+            logger.debug("Context source: POST or GET data (add_view)")
+            customer_pk = request.POST.get('customer') if request.method == 'POST' else None
+            currency_val = request.POST.get('currency') if request.method == 'POST' else None
+
+            logger.debug(f"Attempting to find context. Customer PK from POST: {customer_pk}")
+
+            # *** THE KEY FIX IS HERE ***
+            # Instead of relying on POST['company'], we find the company via the submitted customer.
+            if customer_pk:
+                try:
+                    # Find the customer that was submitted in the main form
+                    customer = Party.objects.select_related('company').get(pk=customer_pk)
+                    # Get the company from that customer object
+                    company = customer.company
+                    logger.debug(f"Found Customer '{customer.name}' and derived Company '{company.name}' from it.")
+                except Party.DoesNotExist:
+                    logger.error(f"CRITICAL: Submitted customer PK {customer_pk} does not exist!")
+                    customer = None
+                    company = None
+
+            # Get currency from POST data
+            if currency_val:
+                currency = currency_val
+
+        logger.debug(f"Final Derived Context -> Company: {company}, Customer: {customer}, Currency: {currency}")
+
+        # The rest of the logic remains the same
+        invoice_queryset = CustomerInvoice.objects.none()
+        if company and customer and currency:
+            logger.debug("SUCCESS: All context found. Building queryset.")
             sent_val = getattr(InvoiceStatus, 'SENT', 'SENT')
             partial_val = getattr(InvoiceStatus, 'PARTIALLY_PAID', 'PARTIALLY_PAID')
             overdue_val = getattr(InvoiceStatus, 'OVERDUE', 'OVERDUE')
 
-            if parent_company and parent_customer and parent_currency:
-                kwargs["queryset"] = CustomerInvoice.objects.filter(
-                    company=parent_company,
-                    customer=parent_customer,
-                    currency=parent_currency,
-                    status__in=[sent_val, partial_val, overdue_val]
-                ).exclude(amount_due__lte=ZERO).select_related('company', 'customer').order_by('due_date',
-                                                                                               'invoice_date')
-            else:
-                kwargs["queryset"] = CustomerInvoice.objects.none()
-                is_add_view_of_parent = not (parent_payment and parent_payment.pk)
-                if is_add_view_of_parent and request.method == 'GET':
-                    missing_proxies = []  # Stores lazy translation objects
-                    if not parent_company: missing_proxies.append(_("'Company'"))
-                    if not parent_customer: missing_proxies.append(_("'Customer'"))
-                    if not parent_currency: missing_proxies.append(_("'Currency'"))
+            invoice_queryset = CustomerInvoice.objects.filter(
+                company=company,
+                customer=customer,
+                currency=currency,
+                status__in=[sent_val, partial_val, overdue_val]
+            ).exclude(amount_due__lte=ZERO)
+        else:
+            logger.debug("FAILURE: One or more context variables are missing. Queryset will be empty.")
 
-                    if missing_proxies:
-                        # ***** CORRECTED HERE *****
-                        # Convert proxy objects to actual strings before joining
-                        missing_fields_str = ", ".join([str(p) for p in missing_proxies])
-                        message_template = _(
-                            "Select %(fields)s on the main Payment form to populate choices for 'Invoice (Current Due)'.")
-                        messages.info(request, message_template % {'fields': missing_fields_str})
+        formset.form.base_fields['invoice'].queryset = invoice_queryset
+        formset.form.base_fields['invoice'].label = _('Invoice (Current Due)')
+
+        logger.debug("get_formset finished.")
+        logger.debug("=" * 50)
+
+        return formset
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
+    # --- KEEP ALL YOUR PERMISSION METHODS (has_add_permission, etc.) EXACTLY AS THEY WERE ---
     def _is_parent_payment_editable(self, parent_payment: Optional[CustomerPayment]) -> bool:
         if parent_payment is None: return True
-        return parent_payment.status != getattr(PaymentStatus, 'VOID', 'VOID')
+        if hasattr(self, '_parent_obj_for_perms'): parent_payment = self._parent_obj_for_perms
+        if parent_payment: return parent_payment.status != getattr(PaymentStatus, 'VOID', 'VOID')
+        return True
 
     def has_add_permission(self, request, obj=None):
-        parent = self._get_parent_payment_context(request) or obj
-        return super().has_add_permission(request, parent) and self._is_parent_payment_editable(parent)
+        self._parent_obj_for_perms = obj
+        return super().has_add_permission(request, obj) and self._is_parent_payment_editable(obj)
 
     def has_change_permission(self, request, obj=None):
-        parent_ctx = obj.payment if isinstance(obj,
-                                               PaymentAllocation) and obj.payment_id else self._get_parent_payment_context(
-            request)
-        if parent_ctx is None and isinstance(obj, CustomerPayment): parent_ctx = obj
+        parent_ctx = obj.payment if isinstance(obj, PaymentAllocation) and obj.payment_id else obj
+        self._parent_obj_for_perms = parent_ctx
         return super().has_change_permission(request, obj) and self._is_parent_payment_editable(parent_ctx)
 
     def has_delete_permission(self, request, obj=None):
-        parent_ctx = obj.payment if isinstance(obj,
-                                               PaymentAllocation) and obj.payment_id else self._get_parent_payment_context(
-            request)
-        if parent_ctx is None and isinstance(obj, CustomerPayment): parent_ctx = obj
+        parent_ctx = obj.payment if isinstance(obj, PaymentAllocation) and obj.payment_id else obj
+        self._parent_obj_for_perms = parent_ctx
         return super().has_delete_permission(request, obj) and self._is_parent_payment_editable(parent_ctx)
-
-
 # =============================================================================
 # CustomerPayment Admin
 # =============================================================================

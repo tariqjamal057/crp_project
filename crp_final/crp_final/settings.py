@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'company.apps.CompanyConfig', # <--- THIS IS THE CRUCIAL CHANGE
     'safedelete',
+    'mathfilters',
 
     # 3. Default Django apps
     'django.contrib.admin',
@@ -447,4 +448,17 @@ JAZZMIN_UI_TWEAKS = {
         "danger": "btn-danger",
         "success": "btn-success",
     }
+}
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # This is the key change
+    },
 }

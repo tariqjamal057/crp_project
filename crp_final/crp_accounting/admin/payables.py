@@ -44,8 +44,6 @@ except ImportError:
     class CustomerInvoiceAdmin:  # Dummy, replace with actual import or handle absence
         @staticmethod
         def related_gl_voucher_link(obj): return "GL Link N/A"
-        # @staticmethod # status_colored is defined specifically in VendorPaymentAdmin now
-        # def status_colored(obj): return str(obj.get_status_display())
 
 
     logger_module_level = logging.getLogger(__name__)  # Use a distinct logger name
@@ -432,9 +430,8 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
               VendorBill.BillStatus.VOID.value: "black"}
         return format_html(f'<strong style="color:{cs.get(obj.status, "black")};">{obj.get_status_display()}</strong>')
 
-    related_gl_voucher_link = CustomerInvoiceAdmin.related_gl_voucher_link  # Ensure CustomerInvoiceAdmin is correctly imported or handled
+    related_gl_voucher_link = CustomerInvoiceAdmin.related_gl_voucher_link
 
-    # --- THIS IS THE CORRECTED HELPER METHOD ---
     def _call_payables_service_single(self, request: HttpRequest, queryset: models.QuerySet, service_method_name: str,
                                       item_id_param_name: str, success_msg_template: str,
                                       eligibility_func: Optional[Callable[[Any], bool]] = None,
@@ -459,16 +456,15 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
 
                 method_params = {
                     'company_id': item.company_id,
-                    item_id_param_name: item.pk,  # e.g., 'bill_id': item.pk or 'payment_id': item.pk
+                    item_id_param_name: item.pk,
                     **current_action_kwargs
                 }
 
-                # Set the correct user parameter based on the service method's signature
                 if service_method_name in ['post_vendor_bill_to_gl', 'post_vendor_payment_to_gl']:
                     method_params['posting_user'] = request.user
                 elif service_method_name in ['void_vendor_bill', 'void_vendor_payment']:
                     method_params['voiding_user'] = request.user
-                else:  # Default for submit_vendor_bill_for_approval, approve_vendor_bill, approve_vendor_payment etc.
+                else:
                     method_params['user'] = request.user
 
                 logger.debug(f"Calling service {service_method_name} with params: {method_params} for item {item_str}")
@@ -490,7 +486,7 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
 
                 logger.warning(
                     f"Admin Action '{service_method_name}' on item '{item_str}' (PK: {item.pk}) failed: {msg}",
-                    exc_info=False)  # exc_info=False for known errors
+                    exc_info=False)
                 messages.error(request, f"{item._meta.verbose_name.capitalize()} '{item_str}': {msg}")
                 error_count += 1
             except Exception as e_unexp:
@@ -549,7 +545,6 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
             request, queryset,
             service_method_name='post_vendor_bill_to_gl',
             item_id_param_name='bill_id',
-            # This should align with what post_vendor_bill_to_gl expects for the bill's ID
             success_msg_template=_("{count} bill(s) posted to GL."),
             eligibility_func=lambda bill: bill.status == VendorBill.BillStatus.APPROVED.value and not (
                         bill.related_gl_voucher_id and bill.related_gl_voucher and bill.related_gl_voucher.status == 'POSTED')
@@ -558,16 +553,16 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
     @admin.action(description=_("Void selected bills"))
     def action_void_bills(self, request: HttpRequest, queryset: models.QuerySet):
         default_reason = _("Voided via admin action by %(user)s") % {
-            'user': request.user.name}  # request.user.name uses your custom User model's 'name' field.
+            'user': request.user.name}
         self._call_payables_service_single(
             request, queryset,
             service_method_name='void_vendor_bill',
-            item_id_param_name='bill_id',  # This should align with what void_vendor_bill expects for the bill's ID
+            item_id_param_name='bill_id',
             success_msg_template=_("{count} bill(s) voided."),
             eligibility_func=lambda bill: bill.status != VendorBill.BillStatus.VOID.value,
             action_kwargs_func=lambda bill: {
                 'void_reason': default_reason,
-                'void_date': timezone.now().date()  # Uses Django's timezone
+                'void_date': timezone.now().date()
             }
         )
 
@@ -576,7 +571,7 @@ class VendorBillAdmin(TenantAccountingModelAdmin):
 # =============================================================================
 class VendorPaymentAllocationInlineForPayment(admin.TabularInline):
     model = VendorPaymentAllocation
-    form = VendorPaymentAllocationInlineForm  # Use custom form for label
+    form = VendorPaymentAllocationInlineForm
     fields = ('vendor_bill', 'allocated_amount', 'allocation_date')
     readonly_fields = ()
     extra = 0
@@ -585,6 +580,7 @@ class VendorPaymentAllocationInlineForPayment(admin.TabularInline):
     verbose_name_plural = _("Bill Allocations")
     fk_name = 'vendor_payment'
 
+    # Display method is good, keep it
     @admin.display(description=_('Selected Vendor Bill Details'))
     def vendor_bill_link(self, obj: VendorPaymentAllocation) -> str:
         if obj.vendor_bill_id:
@@ -600,203 +596,93 @@ class VendorPaymentAllocationInlineForPayment(admin.TabularInline):
             except (NoReverseMatch, VendorBill.DoesNotExist):
                 return f"Bill ID: {obj.vendor_bill_id} (Link/Data Error)"
             except Exception as e:
-                logger.error(
-                    f"Error rendering vendor_bill_link for alloc {obj.pk}: {e}"); return f"Bill ID: {obj.vendor_bill_id} (Display Error)"
+                logger.error(f"Error rendering vendor_bill_link for alloc {obj.pk}: {e}")
+                return f"Bill ID: {obj.vendor_bill_id} (Display Error)"
         return "—"
 
-    def _get_parent_payment_context(self, request: HttpRequest) -> Optional[VendorPayment]:
-        return getattr(request, '_current_parent_payment_for_alloc_inline', None)
-
-    def _get_company_supplier_currency_for_alloc_filter(self, request: HttpRequest,
-                                                        parent_payment_obj_from_context: Optional[VendorPayment]) -> \
-            Tuple[Optional[Company], Optional[Party], Optional[str]]:
-        log_prefix = f"[VPA_Inline_GetCSC][User:{request.user.name}][SU:{request.user.is_superuser}]"
-        company_instance: Optional[Company] = None
-        supplier_instance: Optional[Party] = None
-        payment_currency: Optional[str] = None  # Can be None or an empty string
-
-        # 1. Try to get from request.POST (most current for form submissions)
-        if request.method == 'POST':
-            logger.debug(f"{log_prefix} Method is POST. Processing POST data.")
-            # Assuming main form field names are 'company', 'supplier', 'currency'
-            company_pk_from_post = request.POST.get('company')
-            supplier_pk_from_post = request.POST.get('supplier')
-            # request.POST.get('currency') will return None if key not present, or the value (which can be empty string)
-            currency_from_post = request.POST.get('currency')
-
-            logger.debug(
-                f"{log_prefix} POST values - Co_PK: {company_pk_from_post}, Supp_PK: {supplier_pk_from_post}, Curr: '{currency_from_post}'")
-
-            if company_pk_from_post:
-                try:
-                    company_instance = Company.objects.get(pk=company_pk_from_post)
-                    logger.debug(f"{log_prefix} Company set from POST: {company_instance.name}")
-                except (Company.DoesNotExist, ValueError, TypeError) as e:
-                    logger.warning(f"{log_prefix} Invalid company_pk '{company_pk_from_post}' from POST: {e}")
-                    company_instance = None  # Crucial: ensure it's None if lookup fails
-
-            if supplier_pk_from_post:
-                if company_instance:  # Supplier lookup needs a valid company from POST
-                    try:
-                        supplier_instance = Party.objects.get(pk=supplier_pk_from_post, company=company_instance,
-                                                              party_type=PartyType.SUPPLIER.value)
-                        logger.debug(f"{log_prefix} Supplier set from POST: {supplier_instance.name}")
-                    except (Party.DoesNotExist, ValueError, TypeError) as e:
-                        logger.warning(
-                            f"{log_prefix} Invalid supplier_pk '{supplier_pk_from_post}' for company '{company_instance.name}' from POST: {e}")
-                        supplier_instance = None  # Crucial: ensure it's None
-                else:
-                    logger.warning(
-                        f"{log_prefix} Cannot lookup supplier from POST PK '{supplier_pk_from_post}' as company_instance from POST is None.")
-                    supplier_instance = None
-
-            if currency_from_post is not None:  # Distinguishes from key not being in POST
-                payment_currency = currency_from_post
-                logger.debug(f"{log_prefix} Currency set from POST: '{payment_currency}'")
-
-        # 2. If values are still missing (or it's a GET request), try parent object (if available)
-        # This is for "change" page GETs, or if POST data was incomplete/invalid.
-        if parent_payment_obj_from_context and parent_payment_obj_from_context.pk:
-            logger.debug(
-                f"{log_prefix} Parent obj (PK: {parent_payment_obj_from_context.pk}) available. Using for potentially missing values.")
-            if not company_instance and parent_payment_obj_from_context.company_id:
-                try:
-                    # Attempt to use prefetched related object if available, otherwise query
-                    company_instance = parent_payment_obj_from_context.company
-                    if not isinstance(company_instance, Company):  # Check if it's a valid Company instance
-                        company_instance = Company.objects.get(pk=parent_payment_obj_from_context.company_id)
-                    logger.debug(f"{log_prefix} Company set from parent_obj: {company_instance.name}")
-                except Company.DoesNotExist:
-                    logger.warning(
-                        f"{log_prefix} Company ID {parent_payment_obj_from_context.company_id} on parent obj not found.")
-                    company_instance = None
-
-            # Supplier from parent_obj needs a valid company_instance (either from POST or now from parent's company)
-            if not supplier_instance and parent_payment_obj_from_context.supplier_id:
-                if company_instance:  # Only proceed if we have a company context
-                    try:
-                        supplier_instance = parent_payment_obj_from_context.supplier
-                        if not isinstance(supplier_instance, Party):  # Check if it's a valid Party instance
-                            supplier_instance = Party.objects.get(pk=parent_payment_obj_from_context.supplier_id)
-
-                        # Validate that this supplier actually belongs to the determined company_instance
-                        if supplier_instance.company_id != company_instance.id:
-                            logger.warning(
-                                f"{log_prefix} Supplier {supplier_instance.name} (from parent) company_id {supplier_instance.company_id} "
-                                f"does not match current company_instance_id {company_instance.id}. Invalidating supplier.")
-                            supplier_instance = None
-                        else:
-                            logger.debug(f"{log_prefix} Supplier set from parent_obj: {supplier_instance.name}")
-                    except Party.DoesNotExist:
-                        logger.warning(
-                            f"{log_prefix} Supplier ID {parent_payment_obj_from_context.supplier_id} on parent obj not found.")
-                        supplier_instance = None
-                else:
-                    logger.warning(
-                        f"{log_prefix} Cannot lookup supplier from parent_obj as current company_instance is None.")
-
-            if payment_currency is None and parent_payment_obj_from_context.currency is not None:
-                # Only update if not set by POST (even if POST was an empty string, payment_currency would not be None)
-                payment_currency = parent_payment_obj_from_context.currency
-                logger.debug(f"{log_prefix} Currency set from parent_obj: '{payment_currency}'")
-
-        # 3. For GET requests on "add" page (no parent_obj.pk yet)
-        is_add_page_get = request.method == 'GET' and not (
-                    parent_payment_obj_from_context and parent_payment_obj_from_context.pk)
-        if is_add_page_get:
-            logger.debug(f"{log_prefix} GET request on Add page.")
-            # If company is still not set AND user is not superuser, try request.company (from TenantAccountingModelAdmin)
-            if not company_instance and not request.user.is_superuser:
-                logger.debug(f"{log_prefix} Company not yet set. Non-SU: trying request.company.")
-                # request.company should be set by your TenantAccountingModelAdmin for non-superusers
-                request_company_attr = getattr(request, 'company', None)
-                if isinstance(request_company_attr, Company):
-                    company_instance = request_company_attr
-                    logger.debug(f"{log_prefix} Company set from request.company: {company_instance.name}")
-                else:
-                    logger.warning(f"{log_prefix} Non-SU: request.company not available or not a Company instance.")
-            elif not company_instance and request.user.is_superuser:
-                logger.debug(
-                    f"{log_prefix} Superuser on Add Page (GET), company not yet selected on main form (or derived from POST/parent).")
-                # For a superuser on a GET request for an "add" page, company_instance will likely be None
-                # until they select a company on the main form. This is expected.
-
-        # Final consistency check: if supplier is set, it must belong to the final company_instance
-        if supplier_instance and company_instance and supplier_instance.company_id != company_instance.id:
-            logger.warning(
-                f"{log_prefix} Final check: Supplier {supplier_instance.name} (Company ID: {supplier_instance.company_id}) "
-                f"does not belong to final Company {company_instance.name} (ID: {company_instance.id}). Invalidating supplier.")
-            supplier_instance = None
-        elif supplier_instance and not company_instance:  # If supplier is somehow set but company is not
-            logger.warning(
-                f"{log_prefix} Final check: Supplier {supplier_instance.name} is set, but no valid company_instance. Invalidating supplier.")
-            supplier_instance = None
-
-        logger.info(f"{log_prefix} FINAL Context Derived - "
-                    f"Company: {company_instance.name if company_instance else 'None'}, "
-                    f"Supplier: {supplier_instance.name if supplier_instance else 'None'}, "
-                    f"Currency: '{payment_currency if payment_currency is not None else 'None (not set)'}'")
-
-        return company_instance, supplier_instance, payment_currency
-
     def get_formset(self, request: Any, obj: Optional[VendorPayment] = None, **kwargs: Any) -> Any:
-        request._current_parent_payment_for_alloc_inline = obj
-        logger.debug(
-            f"[VPA_Inline GetFormset][User:{request.user.name}] Stored parent payment (PK: {obj.pk if obj else 'None'}) on request.")
-        return super().get_formset(request, obj, **kwargs)
+        # --- START OF LOGGING ---
+        logger.debug("=" * 50)
+        logger.debug(f"[VendorPaymentAllocationInline.get_formset] Called. Request method: {request.method}")
+        logger.debug(f"Is this a change view? (obj is not None): {obj is not None}")
+        if obj:
+            logger.debug(f"Existing Payment Object PK: {obj.pk}")
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        parent_payment_context_obj = self._get_parent_payment_context(request)
+        if request.method == 'POST':
+            logger.debug(f"--- Relevant POST Data ---")
+            logger.debug(f"POST['supplier']: {request.POST.get('supplier')}")
+            logger.debug(f"POST['currency']: {request.POST.get('currency')}")
+            logger.debug(
+                f"POST['vendorpaymentallocation_set-0-vendor_bill']: {request.POST.get('vendorpaymentallocation_set-0-vendor_bill')}")
+            logger.debug(f"--------------------------")
+        # --- END OF LOGGING ---
 
-        company_for_filtering, supplier_for_filtering, payment_currency_for_filtering = \
-            self._get_company_supplier_currency_for_alloc_filter(request, parent_payment_context_obj)
+        formset = super().get_formset(request, obj, **kwargs)
 
-        log_prefix = f"[VPA_Inline FFKey][User:{request.user.name}][Fld:'{db_field.name}']"
-        logger.debug(
-            f"{log_prefix} Filtering with Co: {company_for_filtering.name if company_for_filtering else 'None'}, "
-            f"Supp: {supplier_for_filtering.name if supplier_for_filtering else 'None'}, "
-            f"Curr: {payment_currency_for_filtering or 'None'}")
+        company, supplier, currency = None, None, None
 
-        if db_field.name == "vendor_bill":
-            if company_for_filtering and supplier_for_filtering and payment_currency_for_filtering:
-                kwargs["queryset"] = VendorBill.objects.filter(
-                    company=company_for_filtering,
-                    supplier=supplier_for_filtering,
-                    currency=payment_currency_for_filtering,
-                    status__in=[VendorBill.BillStatus.APPROVED.value, VendorBill.BillStatus.PARTIALLY_PAID.value]
-                ).exclude(amount_due__lte=ZERO).select_related('company', 'supplier').order_by('due_date', 'issue_date')
-                logger.info(f"{log_prefix} Filtered VendorBill choices. Count: {kwargs['queryset'].count()}.")
-            else:
-                kwargs["queryset"] = VendorBill.objects.none()
-                logger.warning(f"{log_prefix} Insufficient context for VendorBill. Setting queryset to None.")
-                if not (parent_payment_context_obj and parent_payment_context_obj.pk) and request.method == 'GET':
-                    if not (
-                            company_for_filtering and supplier_for_filtering and payment_currency_for_filtering):  # Check again if still no context
-                        messages.info(request,
-                                      _("Select 'Company', 'Supplier', and 'Currency' on the main Payment form to populate choices for 'Vendor Bill (Current Due)'."))
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if obj and obj.pk:  # CHANGE VIEW: Context from the existing payment object
+            logger.debug("Context source: Existing object (change_view)")
+            company = obj.company
+            supplier = obj.supplier
+            currency = obj.currency
+        else:  # ADD VIEW: Context derived from POST data
+            logger.debug("Context source: POST or GET data (add_view)")
+            supplier_pk = request.POST.get('supplier') if request.method == 'POST' else None
+            currency_val = request.POST.get('currency') if request.method == 'POST' else None
+            logger.debug(f"Attempting to find context. Supplier PK from POST: {supplier_pk}")
+
+            if supplier_pk:
+                try:
+                    supplier = Party.objects.select_related('company').get(pk=supplier_pk)
+                    company = supplier.company
+                    logger.debug(f"Found Supplier '{supplier.name}' and derived Company '{company.name}' from it.")
+                except Party.DoesNotExist:
+                    logger.error(f"CRITICAL: Submitted supplier PK {supplier_pk} does not exist!")
+                    supplier, company = None, None
+
+            if currency_val:
+                currency = currency_val
+
+        logger.debug(f"Final Derived Context -> Company: {company}, Supplier: {supplier}, Currency: {currency}")
+
+        bill_queryset = VendorBill.objects.none()
+        if company and supplier and currency:
+            logger.debug("SUCCESS: All context found. Building queryset.")
+            bill_queryset = VendorBill.objects.filter(
+                company=company,
+                supplier=supplier,
+                currency=currency,
+                status__in=[VendorBill.BillStatus.APPROVED.value, VendorBill.BillStatus.PARTIALLY_PAID.value]
+            ).exclude(amount_due__lte=ZERO).order_by('due_date', 'issue_date')
+        else:
+            logger.debug("FAILURE: One or more context variables are missing. Queryset will be empty.")
+
+        formset.form.base_fields['vendor_bill'].queryset = bill_queryset
+
+        if request.method == 'GET' and not obj:
+            if not (supplier and currency):
+                messages.info(request, _("Select 'Supplier' and 'Currency' on the main form to see due bills."))
+
+        logger.debug("get_formset finished.")
+        logger.debug("=" * 50)
+
+        return formset
 
     def _is_parent_payment_editable(self, parent_payment: Optional[VendorPayment]) -> bool:
         if parent_payment is None: return True
         return parent_payment.status != VendorPayment.PaymentStatus.VOID.value
 
     def has_add_permission(self, request, obj=None):
-        parent_payment = self._get_parent_payment_context(request) or obj
-        return super().has_add_permission(request, parent_payment) and self._is_parent_payment_editable(parent_payment)
+        return super().has_add_permission(request, obj) and self._is_parent_payment_editable(obj)
 
     def has_change_permission(self, request, obj=None):
-        parent_payment_context = obj.vendor_payment if isinstance(obj,
-                                                                  VendorPaymentAllocation) and obj.vendor_payment_id else self._get_parent_payment_context(
-            request) or (obj if isinstance(obj, VendorPayment) else None)
+        parent_payment_context = obj.vendor_payment if isinstance(obj, VendorPaymentAllocation) else obj
         return super().has_change_permission(request, obj) and self._is_parent_payment_editable(parent_payment_context)
 
     def has_delete_permission(self, request, obj=None):
-        parent_payment_context = obj.vendor_payment if isinstance(obj,
-                                                                  VendorPaymentAllocation) and obj.vendor_payment_id else self._get_parent_payment_context(
-            request) or (obj if isinstance(obj, VendorPayment) else None)
+        parent_payment_context = obj.vendor_payment if isinstance(obj, VendorPaymentAllocation) else obj
         return super().has_delete_permission(request, obj) and self._is_parent_payment_editable(parent_payment_context)
-
-
 # =============================================================================
 # VendorPayment Admin
 # =============================================================================
@@ -849,8 +735,6 @@ class VendorPaymentAdmin(TenantAccountingModelAdmin):
         return tuple(ro)
 
     def formfield_for_foreignkey(self, db_field, request: HttpRequest, **kwargs):
-        # This method in VendorPaymentAdmin itself determines querysets for main form fields.
-        # It also uses _get_company_from_request_obj_or_form from TenantAccountingModelAdmin.
         company_context = self._get_company_from_request_obj_or_form(
             request,
             self.get_object(request,
@@ -994,8 +878,6 @@ class VendorPaymentAllocationAdmin(TenantAccountingModelAdmin):
                'company',) + self.list_filter_non_superuser if request.user.is_superuser else self.list_filter_non_superuser
 
     def formfield_for_foreignkey(self, db_field, request: HttpRequest, **kwargs):
-        # For standalone admin, context fetching is slightly different
-        # (This logic seems mostly okay, but ensure TenantAccountingModelAdmin sets request.company for non-SU correctly for this admin too)
         company_context = self._get_company_from_request_obj_or_form(request, self.get_object(request,
                                                                                               request.resolver_match.kwargs.get(
                                                                                                   'object_id')) if request.resolver_match.kwargs.get(
@@ -1010,10 +892,6 @@ class VendorPaymentAllocationAdmin(TenantAccountingModelAdmin):
             else:
                 kwargs["queryset"] = VendorPayment.objects.none()
         elif db_field.name == "vendor_bill":
-            # In standalone, we need to be more careful about how we get supplier/currency
-            # as the "parent" payment isn't directly on this form in the same way as an inline.
-            # We might need to make `vendor_payment` a required selection first, then filter `vendor_bill`.
-            # Or, if `vendor_payment` is already selected (e.g., in POST or existing instance), use its context.
             selected_payment_id = None
             if request.method == 'POST':
                 selected_payment_id = request.POST.get('vendor_payment')
@@ -1032,7 +910,7 @@ class VendorPaymentAllocationAdmin(TenantAccountingModelAdmin):
                     ).exclude(amount_due__lte=ZERO)
                 except VendorPayment.DoesNotExist:
                     kwargs["queryset"] = VendorBill.objects.none()
-            elif company_context:  # Show bills for the company if no payment is selected yet (less ideal)
+            elif company_context:
                 kwargs["queryset"] = VendorBill.objects.filter(company=company_context,
                                                                status__in=[VendorBill.BillStatus.APPROVED.value,
                                                                            VendorBill.BillStatus.PARTIALLY_PAID.value]).exclude(

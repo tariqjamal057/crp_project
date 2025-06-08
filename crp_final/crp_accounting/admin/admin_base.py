@@ -4,6 +4,7 @@ from typing import Optional, Tuple, Any, Type, List, Dict
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError, ImproperlyConfigured, FieldDoesNotExist
 from django.db import models, transaction
+from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.forms import BaseForm
 from django.http import HttpRequest
@@ -11,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 # from django.utils.text import get_text_list # Not used, can be removed
 
 from crp_accounting.forms import TenantAdminBaseModelForm
+from crp_accounting.models.base import ExchangeRate
 
 # --- Critical Company App Dependencies ---
 try:
@@ -605,3 +607,160 @@ class TenantAccountingModelAdmin(admin.ModelAdmin):
         if not_deleted_originally: messages.info(request,
                                                  _("%(c)d selected item(s) were not initially soft-deleted.") % {
                                                      'c': not_deleted_originally})
+
+
+@admin.register(ExchangeRate)
+class ExchangeRateAdmin(admin.ModelAdmin):
+    list_display = (
+    'company_display_er', 'from_currency', 'to_currency', 'date', 'rate_display_er', 'source_display_er',
+    'updated_at')  # Renamed display methods
+    list_filter = ('company', 'from_currency', 'to_currency', 'date', 'source')
+    search_fields = ('company__name', 'from_currency', 'to_currency', 'source', 'rate')
+    ordering = ('company__name', 'from_currency', 'to_currency', '-date')  # Default ordering
+    date_hierarchy = 'date'
+    list_select_related = ('company',)
+
+    fieldsets = (
+        (None, {
+            'fields': ('company', ('from_currency', 'to_currency'), 'date', 'rate')
+        }),
+        (_('Optional Information'), {
+            'fields': ('source',),
+            'classes': ('collapse',)  # Keep it collapsed by default
+        }),
+        # Audit information is usually good to have, even if readonly
+        (_('Audit Information'), {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+    readonly_fields = ('created_at', 'updated_at')  # These are auto-managed
+
+    @admin.display(description=_("Company / Context"), ordering='company__name')  # Use ordering for consistency
+    def company_display_er(self, obj: ExchangeRate) -> str:  # Added _er suffix for uniqueness
+        return obj.company.name if obj.company_id and obj.company else _("<Global Rate>")
+
+    @admin.display(description=_("Rate"), ordering='rate')
+    def rate_display_er(self, obj: ExchangeRate) -> str:  # Added _er suffix
+        # Display rate with a reasonable number of decimal places for the list view
+        return f"{obj.rate:.6f}"  # Standard way to format Decimal/float
+
+    @admin.display(description=_("Source"), ordering='source')
+    def source_display_er(self, obj: ExchangeRate) -> str:  # Added _er suffix
+        return obj.source or "—"  # Show a dash if source is empty
+
+    def get_queryset(self, request: HttpRequest):
+        """
+        Superusers see all rates (global and company-specific).
+        Non-superusers (if they have permission, though less common for exchange rates)
+        would only see global rates and rates for their assigned company.
+        """
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs  # Superuser sees all
+
+        # For non-superusers:
+        request_company = getattr(request, 'company', None)  # From CompanyMiddleware
+        if isinstance(request_company, Company):
+            # Non-SU sees global rates OR rates specific to their company.
+            return qs.filter(Q(company__isnull=True) | Q(company=request_company))
+        else:
+            # Non-SU with no specific company context (e.g., if middleware didn't set one)
+            # should probably only see global rates.
+            return qs.filter(company__isnull=True)
+
+    def formfield_for_foreignkey(self, db_field, request: HttpRequest, **kwargs):
+        """
+        Customize ForeignKey dropdowns, specifically for the 'company' field.
+        """
+        if db_field.name == "company":
+            if request.user.is_superuser:
+                # Superusers can assign a rate to any active company or make it global (by leaving blank).
+                # The 'blank=True' on the ExchangeRate.company model field allows the blank option for global.
+                kwargs["queryset"] = Company.objects.filter(is_active=True).order_by('name')
+            else:
+                # Non-superusers (if they were ever allowed to manage company-specific rates):
+                # They should only be able to select their own company if creating/editing a company-specific rate.
+                # For adding global rates, they wouldn't select a company.
+                # This scenario (non-SU managing rates) is less common. Usually, SUs manage rates.
+                request_company = getattr(request, 'company', None)
+                if isinstance(request_company, Company) and request_company.is_active:
+                    kwargs["queryset"] = Company.objects.filter(pk=request_company.pk)
+                    # If they can ONLY manage their own company's rates and not global ones,
+                    # you might make the field mandatory and pre-fill it.
+                    # For now, this allows them to select their own company if the field is shown.
+                else:
+                    # If non-SU has no company or inactive company, they can't create company-specific rates.
+                    # They could potentially still create global rates if allowed.
+                    kwargs["queryset"] = Company.objects.none()  # No company choices for them.
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request: HttpRequest, obj: ExchangeRate, form, change):
+        """
+        Custom save logic, e.g., to ensure non-superusers don't assign rates
+        to companies other than their own (if they have permissions to edit company field).
+        """
+        log_prefix = f"[ExRateAdmin SaveModel][User:{request.user.name}][Rate:{obj.pk or 'New'}]"
+
+        # Validate company assignment if user is not superuser
+        if not request.user.is_superuser:
+            request_company_context = getattr(request, 'company', None)
+            if obj.company and obj.company != request_company_context:
+                # This non-SU is trying to save a rate for a company that isn't their context.
+                logger.error(f"{log_prefix} Non-SU '{request.user.name}' attempted to save rate for company "
+                             f"'{obj.company.name if obj.company else 'Global/Unassigned'}' but their context is "
+                             f"'{request_company_context.name if request_company_context else 'None'}'. Denying save.")
+                raise PermissionDenied(
+                    _("You do not have permission to manage exchange rates for the selected company."))
+            elif not obj.company and request_company_context:
+                # If a non-SU is creating/editing a rate and the company field was somehow blank,
+                # but they *have* a company context, should it default to their company or be global?
+                # For global rates, obj.company should be None.
+                # This scenario needs careful thought based on permissions.
+                # If non-SUs can ONLY manage their own company's rates, then `obj.company` should always be their company.
+                # If they can manage global rates, `obj.company` can be None.
+                # The `formfield_for_foreignkey` already restricts their choices for the company field.
+                pass  # Assuming form validation and field choices handle this.
+
+        # Model's full_clean() is called by Django's save process or ModelAdmin's base save_model
+        # No need to call obj.full_clean() explicitly here if super().save_model() does it.
+        super().save_model(request, obj, form, change)
+        logger.info(f"{log_prefix} ExchangeRate saved. From:{obj.from_currency}, To:{obj.to_currency}, "
+                    f"Date:{obj.date}, Rate:{obj.rate:.6f}, Co:{obj.company.name if obj.company else '<Global>'}")
+
+    # Permission methods: Customize who can add/change/delete rates.
+    # By default, Django checks model-level permissions (add_exchangerate, change_exchangerate, etc.)
+    # We add company-specific checks for non-superusers.
+
+    def has_change_permission(self, request: HttpRequest, obj: Optional[ExchangeRate] = None) -> bool:
+        # Check standard Django model permission first
+        if not super().has_change_permission(request, obj):
+            return False
+        if obj is None:  # For the changelist view itself, permission granted if they have general change perm
+            return True
+        if request.user.is_superuser:
+            return True
+
+        # Non-superuser: can change global rates or rates for their own company
+        request_company = getattr(request, 'company', None)
+        if obj.company is None:  # It's a global rate
+            # Decide if non-SUs can change global rates. Typically, yes, if they have general change perm.
+            return True
+        return obj.company == request_company  # Can change if it's for their company
+
+    def has_delete_permission(self, request: HttpRequest, obj: Optional[ExchangeRate] = None) -> bool:
+        # Similar logic to has_change_permission
+        if not super().has_delete_permission(request, obj):
+            return False
+        if obj is None: return True
+        if request.user.is_superuser: return True
+
+        request_company = getattr(request, 'company', None)
+        if obj.company is None: return True  # Can delete global rates if has general delete perm
+        return obj.company == request_company
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        # If a non-SU has the general 'add_exchangerate' permission, they can attempt to add.
+        # The `formfield_for_foreignkey` will limit their 'company' choices.
+        # The `save_model` will do a final check.
+        return super().has_add_permission(request)

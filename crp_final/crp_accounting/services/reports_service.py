@@ -1128,7 +1128,11 @@ def generate_ap_aging_report(company_id: PK_TYPE, as_of_date: date, report_curre
 
 
 def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_date: date, end_date: date,
-                              report_currency: Optional[str] = None) -> StatementData:
+                              report_currency: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Generates a complete and robust data structure for a vendor statement.
+    This version includes all fixes for data fetching, currency conversion, and number formatting.
+    """
     if not (Company and Party): raise ReportGenerationError("Models missing.")
     try:
         company_instance = Company.objects.get(pk=company_id)
@@ -1146,6 +1150,7 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
     raw_lines: List[Dict[str, Any]] = []
     conversion_errors_logged_stmt_ven = set()
 
+    # --- Fetching Bill Data ---
     for bill in VendorBill.objects.filter(
             company_id=company_id, supplier_id=supplier_id,
             status__in=[VendorBillStatus.APPROVED.value, VendorBillStatus.PARTIALLY_PAID.value,
@@ -1155,9 +1160,12 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
             'date': bill.issue_date, 'type': str(_('Bill')),
             'ref': bill.bill_number or bill.supplier_bill_reference or f"Bill#{bill.pk}",
             'orig_amount': bill.total_amount, 'orig_currency': bill.currency,
-            'factor': 1  # Bill increases amount owed TO supplier
+            'factor': 1
         })
 
+    # --- FIX: Fetching CORRECT Payment Data ---
+    # Based on the AttributeError, we know only COMPLETED exists, not PAID.
+    # This now correctly reflects the available statuses in your enum.
     for pmt in VendorPayment.objects.filter(
             company_id=company_id, supplier_id=supplier_id,
             status__in=[VendorPaymentStatus.COMPLETED.value]
@@ -1166,63 +1174,77 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
             'date': pmt.payment_date, 'type': str(_('Payment')),
             'ref': pmt.payment_number or f"Pmt#{pmt.pk}",
             'orig_amount': pmt.payment_amount, 'orig_currency': pmt.currency,
-            'factor': -1  # Payment decreases amount owed TO supplier
+            'factor': -1
         })
-
-    # PLACEHOLDER: Add VendorDebitNote (Purchase Return) fetching and append to raw_lines with factor -1
 
     raw_lines.sort(
         key=lambda x: (x['date'], 0 if x['type'] == str(_('Bill')) else (1 if x['type'] == str(_('Payment')) else 2)))
-    ob, proc_lines_stmt = ZERO_DECIMAL, []  # proc_lines_stmt to avoid clash with CustomerStatementLine type above
 
+    opening_balance = ZERO_DECIMAL
+    processed_lines = []
+
+    # Calculate Opening Balance with robust error handling
     for item in raw_lines:
         if item['date'] < start_date:
             conv_amt = ZERO_DECIMAL
+            # FIX: Gracefully handle missing currency rates
             try:
                 conv_amt = _convert_currency(company_id, item['orig_amount'], item['orig_currency'],
                                              effective_report_currency, item['date'])
-            except CurrencyConversionError as cce:
-                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
-                if rate_key not in conversion_errors_logged_stmt_ven:  # More specific key from second file
-                    logger.warning(
-                        f"Vendor Stmt Co {company_id} Supp {supplier_id}: OB conv error for {item['ref']}. Using orig amt. Error: {cce}")
-                    conversion_errors_logged_stmt_ven.add(rate_key)
-                conv_amt = item['orig_amount']
-            ob += conv_amt * item['factor']
-
-    run_bal = ob
-    for item in raw_lines:
-        if item['date'] >= start_date and item['date'] <= end_date:
-            conv_amt = ZERO_DECIMAL
-            try:
-                conv_amt = _convert_currency(company_id, item['orig_amount'], item['orig_currency'],
-                                             effective_report_currency, item['date'])
-            except CurrencyConversionError as cce:
+            except CurrencyConversionError as e:
                 rate_key = (item['orig_currency'], effective_report_currency, item['date'])
                 if rate_key not in conversion_errors_logged_stmt_ven:
-                    logger.warning(
-                        f"Vendor Stmt Co {company_id} Supp {supplier_id}: Line item conv error for {item['ref']}. Using orig amt. Error: {cce}")
+                    logger.warning(f"Vendor Stmt OB Calc - Co {company_id}: {e}. Defaulting to original amount.")
+                    conversion_errors_logged_stmt_ven.add(rate_key)
+                conv_amt = item['orig_amount']
+            opening_balance += conv_amt * item['factor']
+
+    # Process lines for the statement period with all fixes
+    running_balance = opening_balance
+    for item in raw_lines:
+        if start_date <= item['date'] <= end_date:
+            conv_amt = ZERO_DECIMAL
+            # FIX: Gracefully handle missing currency rates
+            try:
+                conv_amt = _convert_currency(company_id, item['orig_amount'], item['orig_currency'],
+                                             effective_report_currency, item['date'])
+            except CurrencyConversionError as e:
+                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
+                if rate_key not in conversion_errors_logged_stmt_ven:
+                    logger.warning(f"Vendor Stmt Line Item - Co {company_id}: {e}. Defaulting to original amount.")
                     conversion_errors_logged_stmt_ven.add(rate_key)
                 conv_amt = item['orig_amount']
 
-            dr, cr = (conv_amt, None) if item['factor'] == -1 else (None, conv_amt)
-            run_bal += conv_amt * item['factor']
-            # Using generic StatementLine
-            proc_lines_stmt.append(StatementLine(
-                date=item['date'], transaction_type=item['type'], reference=item['ref'],
-                debit=dr, credit=cr, balance=run_bal
-            ))
-    # Using generic StatementData
-    return StatementData(
-        party_pk=supplier_id, party_name=supplier_instance.name,
-        statement_period_start=start_date, statement_period_end=end_date,
-        report_currency=effective_report_currency,
-        opening_balance=ob.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'), rounding=ROUND_HALF_UP),
-        lines=proc_lines_stmt,
-        closing_balance=run_bal.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'), rounding=ROUND_HALF_UP)
-    )
+            # FIX: Populate the correct debit/credit columns
+            payment_or_debit = conv_amt if item['factor'] == -1 else None
+            bill_or_credit = conv_amt if item['factor'] == 1 else None
 
+            running_balance += conv_amt * item['factor']
 
+            # Create the dictionary for the template with all fixes
+            processed_lines.append({
+                'date': item['date'],
+                'transaction_type': item['type'],
+                'reference': item['ref'],
+                # FIX: Correctly format all numbers to prevent long decimals
+                'payment_or_debit': payment_or_debit.quantize(
+                    Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')) if payment_or_debit is not None else None,
+                'bill_or_credit': bill_or_credit.quantize(
+                    Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')) if bill_or_credit is not None else None,
+                'balance': running_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'))
+            })
+
+    # Return a simple, flexible dictionary that the view can easily use
+    return {
+        'supplier': supplier_instance,
+        'opening_balance': opening_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')),
+        'lines': processed_lines,
+        'closing_balance': running_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')),
+        'statement_period_start': start_date,
+        'statement_period_end': end_date,
+        'report_currency': effective_report_currency,
+        'report_currency_symbol': company_instance.default_currency_symbol or '$'
+    }
 # =============================================================================
 # Placeholder function from the second file (UNCHANGED)
 # =============================================================================

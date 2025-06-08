@@ -1,9 +1,8 @@
 {% extends "admin/base_site.html" %}
-{% load i18n static report_tags %} {# Assuming report_tags has get_item, though not strictly needed here #}
+{% load i18n static report_tags %}
 
 {% block extrastyle %}
     {{ block.super }}
-    {# You can reuse the same reports.css or inline styles as ar_aging_report.html #}
     <style>
         .report-container { padding: 20px; }
         .report-filters { margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: .25rem; }
@@ -27,7 +26,7 @@
     <div class="breadcrumbs">
         <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a> ›
         <a href="{% url 'admin:app_list' app_label='crp_accounting' %}">{% translate app_label|capfirst|default:"Crp_Accounting" %}</a> ›
-        <a href="#">{% translate 'Reports' %}</a> › {# Link to a reports index if you have one #}
+        <a href="#">{% translate 'Reports' %}</a> ›
         {{ title|default:"Customer Statement" }}
     </div>
 {% endblock %}
@@ -36,20 +35,8 @@
 <div id="content-main" class="report-container">
     <h1 class="report-title">{{ title|default:"Customer Statement" }}</h1>
 
-    {% if messages %}
-        <ul class="messagelist">
-            {% for message in messages %}
-                <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message|capfirst }}</li>
-            {% endfor %}
-        </ul>
-    {% endif %}
-
-    {% if report_error %}
-        <p class="errornote">{{ report_error }}</p>
-    {% endif %}
-
     <div class="report-filters">
-        <form method="get" action=""> {# Action will submit to current URL #}
+        <form method="get" action="">
             {% if user.is_superuser and show_company_selector and all_companies %}
                 <div>
                     <label for="company_id_select">{% translate "Company:" %}</label>
@@ -82,7 +69,7 @@
                         {% endfor %}
                     </select>
                 </div>
-            {% elif customer %} {# If customer is already determined (e.g., from URL param) #}
+            {% elif customer %}
                 <input type="hidden" name="customer_id" value="{{ customer.pk }}">
             {% endif %}
 
@@ -95,7 +82,6 @@
                 <input type="date" name="end_date" id="end_date_input" value="{{ end_date_param }}" required>
             </div>
 
-            {# Preserve other GET parameters #}
             {% for key, value in request.GET.items %}
                 {% if key != 'company_id' and key != 'customer_id' and key != 'start_date' and key != 'end_date' %}
                     <input type="hidden" name="{{ key }}" value="{{ value }}">
@@ -116,11 +102,11 @@
                 {% translate "Company" %}:
                 <a href="{% url 'admin:company_company_change' company.pk %}" target="_blank">{{ company.name }}</a>
             </p>
-            <p>{% translate "Period" %}: {{ start_date_param|date:"DATE_FORMAT" }} {% translate "to" %} {{ end_date_param|date:"DATE_FORMAT" }}</p>
+            <p>{% translate "Period" %}: {{ start_date_param|date:"d-M-Y" }} {% translate "to" %} {{ end_date_param|date:"d-M-Y" }}</p>
             <p>{% translate "Currency" %}: {{ report_currency }}</p>
         </div>
 
-        {% if opening_balance is not None and lines is not None %} {# Check if report data is loaded #}
+        {% if opening_balance is not None and lines is not None %}
             <table class="report-table">
                 <thead>
                     <tr>
@@ -135,11 +121,10 @@
                 </thead>
                 <tbody>
                     <tr class="balance-row">
-                        <td colspan="5"><strong>{% translate "Opening Balance" %}</strong></td>
+                        <td>{{ start_date_param|date:"Y-m-d" }}</td>
+                        <td colspan="4"><strong>{% translate "Opening Balance" %}</strong></td>
                         <td class="amount"><strong>{{ opening_balance|floatformat:2 }}</strong></td>
                         <td class="amount">
-                            {# Logic for Dr/Cr of opening balance can be complex based on expected nature #}
-                            {# Assuming positive OB for customer means they owe (Debit for AR) #}
                             {% if opening_balance > 0 %}Dr{% elif opening_balance < 0 %}Cr{% endif %}
                         </td>
                     </tr>
@@ -174,10 +159,17 @@
 
             <div class="report-downloads">
                 {% if customer %}
-                    {# URL for downloading statement for THIS specific customer and date range #}
-                    {% url 'admin:admin-download-customer-statement-pdf' customer_pk=customer.pk as pdf_url %}
+                    <!-- ======================================================= -->
+                    <!-- == THIS IS THE CORRECTED PDF LINK                    == -->
+                    <!-- ======================================================= -->
+                    {% url 'crp_accounting_api:admin-download-customer-statement-pdf' customer_pk=customer.pk as pdf_url %}
                     <a href="{{ pdf_url }}?company_id={{ company.pk }}&start_date={{ start_date_param }}&end_date={{ end_date_param }}" class="button">
                         {% translate "Download PDF Statement" %}
+                    </a>
+
+                    <!-- This Excel link is already correct and remains unchanged -->
+                    <a href="{% url 'crp_accounting_api:admin-download-customer-statement-excel' customer.pk %}?company_id={{ company.pk }}&start_date={{ start_date_param }}&end_date={{ end_date_param }}" class="button">
+                        {% translate "Download Excel Statement" %}
                     </a>
                 {% endif %}
             </div>
