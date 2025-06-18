@@ -2,12 +2,18 @@
 
 import logging
 from collections import defaultdict
+<<<<<<< HEAD
 from decimal import Decimal, InvalidOperation as DecimalInvalidOperation, ROUND_HALF_UP
 from datetime import date, timedelta
+=======
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import date # timedelta wasn't used but can be kept if future use is planned
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 from typing import List, Dict, Tuple, Optional, Any, DefaultDict, TypedDict
 
 from django.utils.translation import gettext_lazy as _
 from django.db import models
+<<<<<<< HEAD
 from django.db.models import Sum, Q, F  # F was in second file's imports
 from django.db.models.functions import Coalesce
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned  # From second file
@@ -37,6 +43,27 @@ from crp_core.enums import PaymentStatus as VendorPaymentStatus
 #     logger.error("Reports Service: CompanyAccountingSettings model not found. Advanced BS features might be impacted.")
 #     CompanyAccountingSettings = None # type: ignore
 
+=======
+from django.db.models import Sum, Q # F was not used, can be removed if not needed elsewhere
+from django.db.models.functions import Coalesce
+# from django.core.exceptions import ObjectDoesNotExist # Not directly used, but good for ORM interactions
+# from django.utils import timezone # Not directly used, but good for date/time operations
+
+logger = logging.getLogger("crp_accounting.services.reports")
+
+# --- Model Imports ---
+from ..models.coa import Account, AccountGroup, PLSection
+from ..models.journal import VoucherLine, TransactionStatus, DrCrType
+from ..models.receivables import CustomerInvoice, InvoiceStatus, CustomerPayment, PaymentAllocation, SMALL_TOLERANCE
+from ..models.party import Party
+from ..models.payables import (
+    VendorBill,
+    BillStatus as VendorBillStatus,
+    VendorPayment,
+    VendorPaymentAllocation # Used in AP Aging
+)
+from crp_core.enums import PaymentStatus as VendorPaymentStatus # For VendorPayment status checking
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
 try:
     from ..models.base import ExchangeRate
@@ -51,6 +78,7 @@ except ImportError:
     logger.error("Reports Service: CRITICAL - Company model not found. Multi-tenancy is fundamentally broken.")
     Company = None  # type: ignore
 
+<<<<<<< HEAD
 # --- Enum Imports (From second file) ---
 from crp_core.enums import AccountNature, AccountType, PartyType as CorePartyType, \
     PaymentStatus as CorePaymentStatus  # Renamed for clarity
@@ -82,25 +110,75 @@ DEFAULT_AP_AGING_BUCKETS_DAYS = [0, 30, 60, 90]  # For AP, can be same as AR or 
 # Constants from first file, if needed for the parts of BS/P&L that are retained
 # DRAWINGS_ACCOUNT_CODE = '3110_owners_drawings_withdrawals'
 # DIVIDENDS_DECLARED_ACCOUNT_CODE = '3210_dividends_declared_paid'
+=======
+# --- Enum Imports ---
+from crp_core.enums import AccountNature, AccountType, PartyType as CorePartyType, \
+    PaymentStatus as CorePaymentStatus
+
+
+# --- Custom Exceptions ---
+class ReportGenerationError(Exception):
+    """Base exception for report generation failures."""
+    pass
+
+
+class BalanceCalculationError(ReportGenerationError):
+    """Exception for errors during account balance calculations."""
+    pass
+
+
+class CurrencyConversionError(ReportGenerationError):
+    """Exception for errors during currency conversion."""
+    pass
+
+
+class DataIntegrityWarning(Warning):
+    """Warning for potential data integrity issues found during report generation."""
+    pass
+
+
+# --- Constants ---
+ZERO_DECIMAL = Decimal('0.00')
+RETAINED_EARNINGS_ACCOUNT_NAME_DISPLAY = _("Retained Earnings (Calculated)")
+RETAINED_EARNINGS_ACCOUNT_ID_PLACEHOLDER = "RETAINED_EARNINGS_CALCULATED"
+DEFAULT_FX_RATE_PRECISION = 8
+DEFAULT_AMOUNT_PRECISION = 2
+DEFAULT_AR_AGING_BUCKETS_DAYS = [0, 30, 60, 90]
+DEFAULT_AP_AGING_BUCKETS_DAYS = [0, 30, 60, 90]
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
 # =============================================================================
 # Type Definitions
 # =============================================================================
+<<<<<<< HEAD
 PK_TYPE = Any
 
 
 # --- TypedDicts from second file (TB, P&L, BS, AR) ---
 class ProfitLossAccountDetail(TypedDict):  # From second file
+=======
+PK_TYPE = Any  # Generic type for primary keys
+
+
+class ProfitLossAccountDetail(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     account_pk: PK_TYPE
     account_number: str
     account_name: str
     amount: Decimal
     original_amount: Decimal
     original_currency: str
+<<<<<<< HEAD
     is_subtotal_in_note: Optional[bool]  # Added from second file's P&L structure
 
 
 class ProfitLossLineItem(TypedDict):  # From second file
+=======
+    is_subtotal_in_note: Optional[bool]
+
+
+class ProfitLossLineItem(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     section_key: str
     title: str
     amount: Decimal
@@ -112,18 +190,30 @@ class ProfitLossLineItem(TypedDict):  # From second file
     note_ref: Optional[str]
 
 
+<<<<<<< HEAD
 class BalanceSheetNode(TypedDict):  # From second file
+=======
+class BalanceSheetNode(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     id: PK_TYPE
     name: str
     type: str  # 'group' or 'account'
     level: int
     balance: Decimal
+<<<<<<< HEAD
     currency: Optional[str]  # Original currency for accounts
+=======
+    currency: Optional[str]
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     account_number: Optional[str]
     children: List['BalanceSheetNode']
 
 
+<<<<<<< HEAD
 class ProcessedAccountBalance(TypedDict):  # From second file
+=======
+class ProcessedAccountBalance(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     account_pk: PK_TYPE
     account_number: str
     account_name: str
@@ -136,16 +226,27 @@ class ProcessedAccountBalance(TypedDict):  # From second file
     pl_section: Optional[str]
 
 
+<<<<<<< HEAD
 # --- Generic TypedDicts for Aging and Statements (inspired by first file, for AP and potential AR harmonization) ---
 class AgingEntry(TypedDict):  # Generic for AR and AP Aging
     party_pk: PK_TYPE
     party_name: str
     currency: str  # Report currency
+=======
+class AgingEntry(TypedDict):
+    party_pk: PK_TYPE
+    party_name: str
+    currency: str
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     buckets: Dict[str, Decimal]
     total_due: Decimal
 
 
+<<<<<<< HEAD
 class StatementLine(TypedDict):  # Generic for Customer and Vendor Statements
+=======
+class StatementLine(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     date: date
     transaction_type: str
     reference: str
@@ -154,7 +255,11 @@ class StatementLine(TypedDict):  # Generic for Customer and Vendor Statements
     balance: Decimal
 
 
+<<<<<<< HEAD
 class StatementData(TypedDict):  # Generic
+=======
+class StatementData(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     party_pk: PK_TYPE
     party_name: str
     statement_period_start: date
@@ -165,8 +270,12 @@ class StatementData(TypedDict):  # Generic
     closing_balance: Decimal
 
 
+<<<<<<< HEAD
 # TypedDicts for AR from second file (kept for now to ensure no breakage to existing AR logic)
 class ARAgingEntry(TypedDict):  # From second file (can be replaced by generic AgingEntry if compatible)
+=======
+class ARAgingEntry(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     customer_pk: PK_TYPE
     customer_name: str
     currency: str
@@ -174,7 +283,11 @@ class ARAgingEntry(TypedDict):  # From second file (can be replaced by generic A
     total_due: Decimal
 
 
+<<<<<<< HEAD
 class CustomerStatementLine(TypedDict):  # From second file (can be replaced by generic StatementLine)
+=======
+class CustomerStatementLine(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     date: date
     transaction_type: str
     reference: str
@@ -183,7 +296,11 @@ class CustomerStatementLine(TypedDict):  # From second file (can be replaced by 
     balance: Decimal
 
 
+<<<<<<< HEAD
 class CustomerStatementData(TypedDict):  # From second file (can be replaced by generic StatementData)
+=======
+class CustomerStatementData(TypedDict):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     customer_pk: PK_TYPE
     customer_name: str
     statement_period_start: date
@@ -195,6 +312,7 @@ class CustomerStatementData(TypedDict):  # From second file (can be replaced by 
 
 
 # =============================================================================
+<<<<<<< HEAD
 # Currency Conversion (From second file - this logic will be used by all reports)
 # =============================================================================
 def _get_exchange_rate(company_id: Optional[PK_TYPE], from_currency: str, to_currency: str,
@@ -223,6 +341,45 @@ def _get_exchange_rate(company_id: Optional[PK_TYPE], from_currency: str, to_cur
     if inverse_rate_obj and inverse_rate_obj.rate != ZERO_DECIMAL:
         return (Decimal('1.0') / Decimal(inverse_rate_obj.rate)).quantize(Decimal(f'1e-{DEFAULT_FX_RATE_PRECISION}'),
                                                                           rounding=ROUND_HALF_UP)
+=======
+# Currency Conversion Utility
+# =============================================================================
+def _get_exchange_rate(company_id: Optional[PK_TYPE], from_currency: str, to_currency: str,
+                       conversion_date: date) -> Decimal:
+    if not ExchangeRate:
+        raise CurrencyConversionError("ExchangeRate model is not available. Cannot perform currency conversion.")
+    if from_currency == to_currency:
+        return Decimal('1.0')
+
+    rate_obj = ExchangeRate.objects.filter(
+        company_id=company_id, from_currency=from_currency, to_currency=to_currency, date__lte=conversion_date
+    ).order_by('-date').first()
+    if rate_obj:
+        return Decimal(rate_obj.rate)
+
+    inverse_rate_obj = ExchangeRate.objects.filter(
+        company_id=company_id, from_currency=to_currency, to_currency=from_currency, date__lte=conversion_date
+    ).order_by('-date').first()
+    if inverse_rate_obj and inverse_rate_obj.rate != ZERO_DECIMAL:
+        return (Decimal('1.0') / Decimal(inverse_rate_obj.rate)).quantize(
+            Decimal(f'1e-{DEFAULT_FX_RATE_PRECISION}'), rounding=ROUND_HALF_UP
+        )
+
+    rate_obj = ExchangeRate.objects.filter(
+        company_id__isnull=True, from_currency=from_currency, to_currency=to_currency, date__lte=conversion_date
+    ).order_by('-date').first()
+    if rate_obj:
+        return Decimal(rate_obj.rate)
+
+    inverse_rate_obj = ExchangeRate.objects.filter(
+        company_id__isnull=True, from_currency=to_currency, to_currency=from_currency, date__lte=conversion_date
+    ).order_by('-date').first()
+    if inverse_rate_obj and inverse_rate_obj.rate != ZERO_DECIMAL:
+        return (Decimal('1.0') / Decimal(inverse_rate_obj.rate)).quantize(
+            Decimal(f'1e-{DEFAULT_FX_RATE_PRECISION}'), rounding=ROUND_HALF_UP
+        )
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     logger.error(
         f"No exchange rate found for Co {company_id or 'Global'} from {from_currency} to {to_currency} on or before {conversion_date}.")
     raise CurrencyConversionError(
@@ -231,8 +388,15 @@ def _get_exchange_rate(company_id: Optional[PK_TYPE], from_currency: str, to_cur
 
 def _convert_currency(company_id: Optional[PK_TYPE], amount: Decimal, from_currency: str, to_currency: str,
                       conversion_date: date, precision: int = DEFAULT_AMOUNT_PRECISION) -> Decimal:
+<<<<<<< HEAD
     if from_currency == to_currency: return amount.quantize(Decimal(f'1e-{precision}'), rounding=ROUND_HALF_UP)
     if amount == ZERO_DECIMAL: return ZERO_DECIMAL
+=======
+    if from_currency == to_currency:
+        return amount.quantize(Decimal(f'1e-{precision}'), rounding=ROUND_HALF_UP)
+    if amount == ZERO_DECIMAL:
+        return ZERO_DECIMAL
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     try:
         rate = _get_exchange_rate(company_id, from_currency, to_currency, conversion_date)
         converted = (amount * rate).quantize(Decimal(f'1e-{precision}'), rounding=ROUND_HALF_UP)
@@ -242,6 +406,7 @@ def _convert_currency(company_id: Optional[PK_TYPE], amount: Decimal, from_curre
     except Exception as e:
         logger.exception(
             f"Error during currency conversion from {from_currency} to {to_currency} for Co {company_id or 'Global'}")
+<<<<<<< HEAD
         raise CurrencyConversionError(f"General conversion failure: {str(e)}") from e
 
 
@@ -255,21 +420,53 @@ def _calculate_account_balances(company_id: PK_TYPE, as_of_date: date, target_re
 
     logger.debug(
         f"Calculating balances for Co ID {company_id} as of {as_of_date}, target currency {target_report_currency}...")
+=======
+        raise CurrencyConversionError(f"General currency conversion failure: {str(e)}") from e
+
+
+# =============================================================================
+# Core Balance Calculation Helper
+# =============================================================================
+def _calculate_account_balances(company_id: PK_TYPE, as_of_date: date, target_report_currency: str) -> \
+        Dict[PK_TYPE, ProcessedAccountBalance]:
+    if not Company: raise ReportGenerationError("Company model not available.")
+    if not company_id: raise ValueError("company_id must be provided for balance calculation.")
+
+    logger.debug(
+        f"Calculating account balances for Company ID {company_id} as of {as_of_date}, target currency {target_report_currency}...")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     account_balances: Dict[PK_TYPE, ProcessedAccountBalance] = {}
     conversion_errors_logged = set()
 
     try:
         aggregation = VoucherLine.objects.filter(
+<<<<<<< HEAD
             voucher__company_id=company_id, voucher__status=TransactionStatus.POSTED.value,
             voucher__date__lte=as_of_date, account__company_id=company_id, account__is_active=True
         ).values('account').annotate(
+=======
+            voucher__company_id=company_id,
+            voucher__status=TransactionStatus.POSTED.value,
+            voucher__date__lte=as_of_date,
+            account__company_id=company_id,
+            account__is_active=True
+        ).values(
+            'account'
+        ).annotate(
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             total_debit=Coalesce(Sum('amount', filter=Q(dr_cr=DrCrType.DEBIT.value)), ZERO_DECIMAL,
                                  output_field=models.DecimalField()),
             total_credit=Coalesce(Sum('amount', filter=Q(dr_cr=DrCrType.CREDIT.value)), ZERO_DECIMAL,
                                   output_field=models.DecimalField())
         ).values(
+<<<<<<< HEAD
             'account__id', 'account__account_number', 'account__account_name', 'account__account_type',
             'account__account_nature', 'account__account_group_id', 'account__currency', 'account__pl_section',
+=======
+            'account__id', 'account__account_number', 'account__account_name',
+            'account__account_type', 'account__account_nature', 'account__account_group_id',
+            'account__currency', 'account__pl_section',
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             'total_debit', 'total_credit'
         )
 
@@ -289,16 +486,33 @@ def _calculate_account_balances(company_id: PK_TYPE, as_of_date: date, target_re
                 rate_key = (acc_currency, target_report_currency)
                 if rate_key not in conversion_errors_logged:
                     logger.warning(
+<<<<<<< HEAD
                         f"Co {company_id}: {cce} for Account {pk} ({item['account__account_number']}). Using original balance for this account. Report may be mixed-currency.")
+=======
+                        f"Co {company_id}: Balance calc currency conversion error: {cce} for Account {pk} ({item['account__account_number']}). "
+                        "Using original balance. Report may be mixed-currency.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
                     conversion_errors_logged.add(rate_key)
                 converted_balance = original_balance
 
             account_balances[pk] = ProcessedAccountBalance(
+<<<<<<< HEAD
                 account_pk=pk, account_number=item['account__account_number'],
                 account_name=str(item['account__account_name']),
                 account_type=item['account__account_type'], account_nature=nature,
                 account_group_pk=item['account__account_group_id'],
                 original_currency=acc_currency, original_balance=original_balance, converted_balance=converted_balance,
+=======
+                account_pk=pk,
+                account_number=item['account__account_number'],
+                account_name=str(item['account__account_name']),
+                account_type=item['account__account_type'],
+                account_nature=nature,
+                account_group_pk=item['account__account_group_id'],
+                original_currency=acc_currency,
+                original_balance=original_balance,
+                converted_balance=converted_balance,
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
                 pl_section=item['account__pl_section']
             )
 
@@ -313,19 +527,38 @@ def _calculate_account_balances(company_id: PK_TYPE, as_of_date: date, target_re
                     original_currency=acc.currency, original_balance=ZERO_DECIMAL, converted_balance=ZERO_DECIMAL,
                     pl_section=acc.pl_section
                 )
+<<<<<<< HEAD
         logger.debug(f"Calculated balances for {len(account_balances)} accounts for Co ID {company_id}.")
         return account_balances
     except Exception as e:
         logger.exception(f"Unexpected error in _calculate_account_balances for Co ID {company_id}.")
+=======
+        logger.debug(
+            f"Successfully calculated balances for {len(account_balances)} accounts for Company ID {company_id}.")
+        return account_balances
+    except Exception as e:
+        logger.exception(f"Unexpected error in _calculate_account_balances for Company ID {company_id}.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         raise BalanceCalculationError(f"Failed to calculate account balances: {str(e)}") from e
 
 
 # =============================================================================
+<<<<<<< HEAD
 # Hierarchy Building Helpers (From second file - this logic will be used by TB & BS)
 # =============================================================================
 def _build_group_hierarchy_recursive(parent_group_id: Optional[PK_TYPE], all_groups: Dict[PK_TYPE, AccountGroup],
                                      account_data_map: Dict[PK_TYPE, ProcessedAccountBalance], level: int) -> Tuple[
     List[Dict[str, Any]], Decimal, Decimal]:  # This is for Trial Balance
+=======
+# Hierarchy Building Helpers
+# =============================================================================
+def _build_group_hierarchy_recursive(
+        parent_group_id: Optional[PK_TYPE],
+        all_groups: Dict[PK_TYPE, AccountGroup],
+        account_data_map: Dict[PK_TYPE, ProcessedAccountBalance],
+        level: int
+) -> Tuple[List[Dict[str, Any]], Decimal, Decimal]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     current_level_nodes: List[Dict[str, Any]] = []
     current_level_total_debit = ZERO_DECIMAL
     current_level_total_credit = ZERO_DECIMAL
@@ -359,7 +592,11 @@ def _build_group_hierarchy_recursive(parent_group_id: Optional[PK_TYPE], all_gro
                 account_debit = -balance_in_report_curr if balance_in_report_curr < ZERO_DECIMAL else ZERO_DECIMAL
             else:
                 logger.warning(
+<<<<<<< HEAD
                     f"Account {acc_pk} ({acc_data.get('account_number')}) has unknown nature '{nature}'. Balance signs might be incorrect.")
+=======
+                    f"Account {acc_pk} ({acc_data.get('account_number')}) has unknown nature '{nature}'. Balance signs might be incorrect on Trial Balance.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
             if account_debit != ZERO_DECIMAL or account_credit != ZERO_DECIMAL:
                 account_node = {
@@ -371,6 +608,7 @@ def _build_group_hierarchy_recursive(parent_group_id: Optional[PK_TYPE], all_gro
                 direct_accounts_nodes.append(account_node)
                 current_level_total_debit += account_debit
                 current_level_total_credit += account_credit
+<<<<<<< HEAD
     direct_accounts_nodes.sort(key=lambda item: account_data_map.get(item['id'], {}).get('account_number', ''))
     current_level_nodes.extend(direct_accounts_nodes)
     return current_level_nodes, current_level_total_debit, current_level_total_credit
@@ -379,6 +617,21 @@ def _build_group_hierarchy_recursive(parent_group_id: Optional[PK_TYPE], all_gro
 def _build_balance_sheet_hierarchy(parent_group_id: Optional[PK_TYPE], all_groups: Dict[PK_TYPE, AccountGroup],
                                    account_balances_bs: Dict[PK_TYPE, ProcessedAccountBalance], level: int) -> Tuple[
     List[BalanceSheetNode], Decimal]:  # This is for Balance Sheet
+=======
+
+    direct_accounts_nodes.sort(key=lambda item: account_data_map.get(item['id'], {}).get('account_number', ''))
+    current_level_nodes.extend(direct_accounts_nodes)
+
+    return current_level_nodes, current_level_total_debit, current_level_total_credit
+
+
+def _build_balance_sheet_hierarchy(
+        parent_group_id: Optional[PK_TYPE],
+        all_groups: Dict[PK_TYPE, AccountGroup],
+        account_balances_bs: Dict[PK_TYPE, ProcessedAccountBalance],
+        level: int
+) -> Tuple[List[BalanceSheetNode], Decimal]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     current_level_nodes: List[BalanceSheetNode] = []
     current_level_total_balance = ZERO_DECIMAL
 
@@ -414,24 +667,51 @@ def _build_balance_sheet_hierarchy(parent_group_id: Optional[PK_TYPE], all_group
                 }
                 direct_accounts_nodes.append(account_node)
                 current_level_total_balance += account_balance_in_report_curr
+<<<<<<< HEAD
     direct_accounts_nodes.sort(key=lambda item: account_balances_bs.get(item['id'], {}).get('account_number', ''))
     current_level_nodes.extend(direct_accounts_nodes)
+=======
+
+    direct_accounts_nodes.sort(key=lambda item: account_balances_bs.get(item['id'], {}).get('account_number', ''))
+    current_level_nodes.extend(direct_accounts_nodes)
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     return current_level_nodes, current_level_total_balance
 
 
 # =============================================================================
+<<<<<<< HEAD
 # Public Report Generation Functions (TB, P&L, BS - FROM SECOND FILE, UNCHANGED)
 # =============================================================================
 def generate_trial_balance_structured(company_id: PK_TYPE, as_of_date: date, report_currency: Optional[str] = None) -> \
         Dict[str, Any]:  # FROM SECOND FILE
+=======
+# Public Report Generation Functions (Trial Balance, P&L, Balance Sheet)
+# =============================================================================
+def generate_trial_balance_structured(company_id: PK_TYPE, as_of_date: date, report_currency: Optional[str] = None) -> \
+        Dict[str, Any]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     if not Company: raise ReportGenerationError("Company model not available.")
     try:
         company_instance = Company.objects.get(pk=company_id)
     except Company.DoesNotExist:
+<<<<<<< HEAD
         raise ReportGenerationError(f"Company ID {company_id} not found.")
 
     effective_report_currency = report_currency or company_instance.default_currency_code or 'USD'
     logger.info(f"TB Gen: Co ID {company_id} ({effective_report_currency}) as of {as_of_date}")
+=======
+        raise ReportGenerationError(f"Company with ID {company_id} not found.")
+
+    effective_report_currency = report_currency or company_instance.default_currency_code
+    if not effective_report_currency:
+        effective_report_currency = 'USD'
+        logger.warning(
+            f"TB Gen for Co ID {company_id}: No report_currency provided and company has no default. Defaulting to USD.")
+
+    logger.info(
+        f"Generating Trial Balance for Company ID {company_id} (Currency: {effective_report_currency}) as of {as_of_date}")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     processed_balances_map = _calculate_account_balances(company_id, as_of_date, effective_report_currency)
     flat_entries_list: List[Dict[str, Any]] = []
@@ -451,9 +731,18 @@ def generate_trial_balance_structured(company_id: PK_TYPE, as_of_date: date, rep
 
         if debit_amount != ZERO_DECIMAL or credit_amount != ZERO_DECIMAL:
             flat_entries_list.append({
+<<<<<<< HEAD
                 'account_pk': pk, 'account_number': data['account_number'], 'account_name': str(data['account_name']),
                 'debit': debit_amount, 'credit': credit_amount, 'currency': effective_report_currency
                 # Note: 'is_group' was in first file, not here in second file's TB flat entries
+=======
+                'account_pk': pk,
+                'account_number': data['account_number'],
+                'account_name': str(data['account_name']),
+                'debit': debit_amount,
+                'credit': credit_amount,
+                'currency': effective_report_currency
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             })
         grand_total_debit += debit_amount
         grand_total_credit += credit_amount
@@ -466,6 +755,7 @@ def generate_trial_balance_structured(company_id: PK_TYPE, as_of_date: date, rep
     is_balanced = abs(grand_total_debit - grand_total_credit) < Decimal('0.01')
     if not is_balanced:
         logger.error(
+<<<<<<< HEAD
             f"TB Co ID {company_id}: OUT OF BALANCE! Debit Total: {grand_total_debit}, Credit Total: {grand_total_credit}, Difference: {grand_total_debit - grand_total_credit}")
 
     return {
@@ -489,20 +779,54 @@ DEFAULT_PL_STRUCTURE_DEFINITION = [
     {'key': PLSection.OPERATING_EXPENSE.value, 'title': _('Operating Expenses'), 'level': 0, 'is_subtotal': False,
      'calculation_method': 'sum_section', 'has_note': True, 'note_ref': 'Note_OpEx',
      # Note related fields from 2nd file
+=======
+            f"Trial Balance for Co ID {company_id} is OUT OF BALANCE! "
+            f"Debit Total: {grand_total_debit}, Credit Total: {grand_total_credit}, "
+            f"Difference: {grand_total_debit - grand_total_credit}")
+
+    return {
+        'company_id': company_id,
+        'company_name': company_instance.name,
+        'as_of_date': as_of_date,
+        'report_currency': effective_report_currency,
+        'hierarchy': hierarchy,
+        'flat_entries': flat_entries_list,
+        'total_debit': grand_total_debit,
+        'total_credit': grand_total_credit,
+        'is_balanced': is_balanced,
+    }
+
+
+DEFAULT_PL_STRUCTURE_DEFINITION = [
+    {'key': PLSection.REVENUE.value, 'title': _('Revenue'), 'level': 0, 'is_subtotal': False,
+     'calculation_method': 'sum_section'},
+    {'key': PLSection.COGS.value, 'title': _('Cost of Goods Sold / Services'), 'level': 0, 'is_subtotal': False,
+     'calculation_method': 'sum_section'},
+    {'key': 'GROSS_PROFIT', 'title': _('Gross Profit'), 'level': 0, 'is_subtotal': True,
+     'calculation_basis': [(PLSection.REVENUE.value, True), (PLSection.COGS.value, False)]},
+    {'key': PLSection.OPERATING_EXPENSE.value, 'title': _('Operating Expenses'), 'level': 0, 'is_subtotal': False,
+     'calculation_method': 'sum_section', 'has_note': True, 'note_ref': 'Note_OpEx',
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
      'note_title': _('Details of Operating Expenses')},
     {'key': PLSection.DEPRECIATION_AMORTIZATION.value, 'title': _('Depreciation & Amortization'), 'level': 0,
      'is_subtotal': False, 'calculation_method': 'sum_section'},
     {'key': 'OPERATING_PROFIT', 'title': _('Operating Profit / (Loss)'), 'level': 0, 'is_subtotal': True,
+<<<<<<< HEAD
      'calculation_basis': [
          ('GROSS_PROFIT', True),
          (PLSection.OPERATING_EXPENSE.value, False),
          (PLSection.DEPRECIATION_AMORTIZATION.value, False)
      ]},
+=======
+     'calculation_basis': [('GROSS_PROFIT', True), (PLSection.OPERATING_EXPENSE.value, False),
+                           (PLSection.DEPRECIATION_AMORTIZATION.value, False)]},
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     {'key': PLSection.OTHER_INCOME.value, 'title': _('Other Income'), 'level': 0, 'is_subtotal': False,
      'calculation_method': 'sum_section'},
     {'key': PLSection.OTHER_EXPENSE.value, 'title': _('Other Expenses'), 'level': 0, 'is_subtotal': False,
      'calculation_method': 'sum_section'},
     {'key': 'PROFIT_BEFORE_TAX', 'title': _('Profit / (Loss) Before Tax'), 'level': 0, 'is_subtotal': True,
+<<<<<<< HEAD
      'calculation_basis': [
          ('OPERATING_PROFIT', True),
          (PLSection.OTHER_INCOME.value, True),
@@ -515,33 +839,73 @@ DEFAULT_PL_STRUCTURE_DEFINITION = [
          ('PROFIT_BEFORE_TAX', True),
          (PLSection.TAX_EXPENSE.value, False)
      ]},
+=======
+     'calculation_basis': [('OPERATING_PROFIT', True), (PLSection.OTHER_INCOME.value, True),
+                           (PLSection.OTHER_EXPENSE.value, False)]},
+    {'key': PLSection.TAX_EXPENSE.value, 'title': _('Tax Expense'), 'level': 0, 'is_subtotal': False,
+     'calculation_method': 'sum_section'},
+    {'key': 'NET_INCOME', 'title': _('Net Income / (Loss)'), 'level': 0, 'is_subtotal': True,
+     'calculation_basis': [('PROFIT_BEFORE_TAX', True), (PLSection.TAX_EXPENSE.value, False)]},
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 ]
 
 
 def generate_profit_loss(company_id: PK_TYPE, start_date: date, end_date: date,
+<<<<<<< HEAD
                          report_currency: Optional[str] = None) -> Dict[str, Any]:  # FROM SECOND FILE
+=======
+                         report_currency: Optional[str] = None) -> Dict[str, Any]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     if not Company: raise ReportGenerationError("Company model not available.")
     try:
         company_instance = Company.objects.get(pk=company_id)
     except Company.DoesNotExist:
+<<<<<<< HEAD
         raise ReportGenerationError(f"Company ID {company_id} not found.")
 
     effective_report_currency = report_currency or company_instance.default_currency_code or 'USD'
     logger.info(f"P&L Gen: Co ID {company_id} ({effective_report_currency}) from {start_date} to {end_date}")
     if start_date > end_date: raise ValueError("Start date cannot be after end date for P&L.")
+=======
+        raise ReportGenerationError(f"Company with ID {company_id} not found.")
+
+    effective_report_currency = report_currency or company_instance.default_currency_code
+    if not effective_report_currency:
+        effective_report_currency = 'USD'
+        logger.warning(f"P&L Gen for Co ID {company_id}: No report_currency and no company default. Defaulting to USD.")
+
+    logger.info(
+        f"Generating P&L for Company ID {company_id} (Currency: {effective_report_currency}) from {start_date} to {end_date}")
+    if start_date > end_date:
+        raise ValueError("Start date cannot be after end date for Profit & Loss report.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     section_totals: DefaultDict[str, Decimal] = defaultdict(Decimal)
     section_details: DefaultDict[str, List[ProfitLossAccountDetail]] = defaultdict(list)
     calculated_values: Dict[str, Decimal] = {}
     conversion_errors_logged_pl = set()
+<<<<<<< HEAD
     financial_notes_data: Dict[str, Dict[str, Any]] = {}  # From second file
+=======
+    financial_notes_data: Dict[str, Dict[str, Any]] = {}
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     pl_account_types = [AccountType.INCOME.value, AccountType.EXPENSE.value, AccountType.COST_OF_GOODS_SOLD.value]
 
     account_movements = VoucherLine.objects.filter(
+<<<<<<< HEAD
         voucher__company_id=company_id, voucher__status=TransactionStatus.POSTED.value,
         voucher__date__gte=start_date, voucher__date__lte=end_date,
         account__company_id=company_id, account__account_type__in=pl_account_types, account__is_active=True
+=======
+        voucher__company_id=company_id,
+        voucher__status=TransactionStatus.POSTED.value,
+        voucher__date__gte=start_date,
+        voucher__date__lte=end_date,
+        account__company_id=company_id,
+        account__account_type__in=pl_account_types,
+        account__is_active=True
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     ).values('account').annotate(
         period_debit=Coalesce(Sum('amount', filter=Q(dr_cr=DrCrType.DEBIT.value)), ZERO_DECIMAL,
                               output_field=models.DecimalField()),
@@ -561,7 +925,11 @@ def generate_profit_loss(company_id: PK_TYPE, start_date: date, end_date: date,
 
         if not pl_section_str or pl_section_str == PLSection.NONE.value:
             logger.debug(
+<<<<<<< HEAD
                 f"P&L Co {company_id}: Account {acc_pk} ({item['account__account_number']}) has no PLSection, skipping from P&L aggregation.")
+=======
+                f"P&L Co {company_id}: Account {acc_pk} ({item['account__account_number']}) has no PLSection or is 'NONE'. Skipping.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             continue
 
         movement_in_acc_currency = (item['period_credit'] - item['period_debit']) \
@@ -577,26 +945,43 @@ def generate_profit_loss(company_id: PK_TYPE, start_date: date, end_date: date,
             rate_key = (acc_currency, effective_report_currency)
             if rate_key not in conversion_errors_logged_pl:
                 logger.warning(
+<<<<<<< HEAD
                     f"P&L Co {company_id}: {cce} for Acc {acc_pk} ({item['account__account_number']}). Using original amount for this account.")
+=======
+                    f"P&L Co {company_id}: Currency conversion error: {cce} for Account {acc_pk} ({item['account__account_number']}). Using original amount.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
                 conversion_errors_logged_pl.add(rate_key)
             movement_in_report_currency = movement_in_acc_currency
 
         section_totals[pl_section_str] += movement_in_report_currency
+<<<<<<< HEAD
         section_details[pl_section_str].append(ProfitLossAccountDetail(  # ProfitLossAccountDetail from 2nd file
+=======
+        section_details[pl_section_str].append(ProfitLossAccountDetail(
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             account_pk=acc_pk, account_number=item['account__account_number'],
             account_name=str(item['account__account_name']),
             amount=movement_in_report_currency, original_amount=movement_in_acc_currency,
             original_currency=acc_currency,
+<<<<<<< HEAD
             is_subtotal_in_note=False  # Defaulting this, adjust if specific logic needed
         ))
 
     report_lines: List[ProfitLossLineItem] = []  # ProfitLossLineItem from 2nd file
     for section_def in DEFAULT_PL_STRUCTURE_DEFINITION:  # Using 2nd file's PL structure
+=======
+            is_subtotal_in_note=False
+        ))
+
+    report_lines: List[ProfitLossLineItem] = []
+    for section_def in DEFAULT_PL_STRUCTURE_DEFINITION:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         key = section_def['key']
         title = str(section_def['title'])
         is_subtotal = section_def['is_subtotal']
         level = section_def.get('level', 0)
         calculation_method = section_def.get('calculation_method')
+<<<<<<< HEAD
         has_note = section_def.get('has_note', False)  # From second file structure
         note_ref = section_def.get('note_ref')  # From second file structure
         note_title_str = str(section_def.get('note_title', title))  # From second file structure
@@ -651,15 +1036,72 @@ def generate_profit_loss(company_id: PK_TYPE, start_date: date, end_date: date,
         'report_lines': report_lines,
         'net_income': net_income,
         'financial_notes_data': financial_notes_data  # From 2nd file
+=======
+        has_note_flag = section_def.get('has_note', False)
+        note_reference = section_def.get('note_ref')
+        note_title_text = str(section_def.get('note_title', title))
+
+        accounts_for_this_line: Optional[List[ProfitLossAccountDetail]] = None
+        current_line_amount_val: Decimal = ZERO_DECIMAL
+
+        if calculation_method == 'sum_section':
+            current_line_amount_val = section_totals.get(key, ZERO_DECIMAL)
+            accounts_for_this_line = sorted(section_details.get(key, []), key=lambda x: x['account_number'])
+
+            if has_note_flag and note_reference and accounts_for_this_line:
+                financial_notes_data[note_reference] = {
+                    'title': note_title_text,
+                    'details': accounts_for_this_line,
+                    'total_amount': current_line_amount_val
+                }
+        elif is_subtotal:
+            for basis_key, is_positive_impact in section_def.get('calculation_basis', []):
+                amount_from_basis = calculated_values.get(basis_key, ZERO_DECIMAL)
+                current_line_amount_val += amount_from_basis * (
+                    Decimal('1.0') if is_positive_impact else Decimal('-1.0'))
+
+        calculated_values[key] = current_line_amount_val
+
+        show_this_line = is_subtotal or \
+                         (calculation_method == 'sum_section' and (current_line_amount_val != ZERO_DECIMAL or
+                                                                   (accounts_for_this_line and len(
+                                                                       accounts_for_this_line) > 0)))
+
+        if show_this_line:
+            report_lines.append(ProfitLossLineItem(
+                section_key=key, title=title, amount=current_line_amount_val,
+                is_subtotal=is_subtotal,
+                is_main_section_title=bool(calculation_method and not is_subtotal),
+                accounts=accounts_for_this_line if not has_note_flag else None,
+                level=level,
+                has_note=has_note_flag, note_ref=note_reference
+            ))
+
+    net_income_calculated = calculated_values.get('NET_INCOME', ZERO_DECIMAL)
+    return {
+        'company_id': company_id,
+        'company_name': company_instance.name,
+        'start_date': start_date,
+        'end_date': end_date,
+        'report_currency': effective_report_currency,
+        'report_lines': report_lines,
+        'net_income': net_income_calculated,
+        'financial_notes_data': financial_notes_data
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     }
 
 
 def generate_balance_sheet(company_id: PK_TYPE, as_of_date: date, report_currency: Optional[str] = None) -> Dict[
+<<<<<<< HEAD
     str, Any]:  # FROM SECOND FILE
+=======
+    str, Any]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     if not Company: raise ReportGenerationError("Company model not available.")
     try:
         company_instance = Company.objects.get(pk=company_id)
     except Company.DoesNotExist:
+<<<<<<< HEAD
         raise ReportGenerationError(f"Company ID {company_id} not found.")
 
     effective_report_currency = report_currency or company_instance.default_currency_code or 'USD'
@@ -702,10 +1144,59 @@ def generate_balance_sheet(company_id: PK_TYPE, as_of_date: date, report_currenc
         'name': str(RETAINED_EARNINGS_ACCOUNT_NAME_DISPLAY),
         'type': 'account', 'level': 0,
         'balance': retained_earnings_calculated,
+=======
+        raise ReportGenerationError(f"Company with ID {company_id} not found.")
+
+    effective_report_currency = report_currency or company_instance.default_currency_code
+    if not effective_report_currency:
+        effective_report_currency = 'USD'
+        logger.warning(f"BS Gen for Co ID {company_id}: No report_currency and no company default. Defaulting to USD.")
+
+    logger.info(
+        f"Generating Balance Sheet for Company ID {company_id} (Currency: {effective_report_currency}) as of {as_of_date}")
+
+    all_account_balances = _calculate_account_balances(company_id, as_of_date, effective_report_currency)
+
+    retained_earnings_from_pl_accounts = ZERO_DECIMAL
+    pl_types_for_retained_earnings = {AccountType.INCOME.value, AccountType.EXPENSE.value,
+                                      AccountType.COST_OF_GOODS_SOLD.value}
+    for acc_data in all_account_balances.values():
+        if acc_data['account_type'] in pl_types_for_retained_earnings:
+            balance = acc_data['converted_balance']
+            if acc_data['account_nature'] == AccountNature.CREDIT.value:
+                retained_earnings_from_pl_accounts += balance
+            elif acc_data['account_nature'] == AccountNature.DEBIT.value:
+                retained_earnings_from_pl_accounts -= balance
+
+    asset_balances_map: Dict[PK_TYPE, ProcessedAccountBalance] = {}
+    liability_balances_map: Dict[PK_TYPE, ProcessedAccountBalance] = {}
+    equity_balances_map: Dict[PK_TYPE, ProcessedAccountBalance] = {}
+
+    for pk, data in all_account_balances.items():
+        if data['account_type'] == AccountType.ASSET.value:
+            asset_balances_map[pk] = data
+        elif data['account_type'] == AccountType.LIABILITY.value:
+            liability_balances_map[pk] = data
+        elif data['account_type'] == AccountType.EQUITY.value:
+            equity_balances_map[pk] = data
+
+    company_groups = {group.pk: group for group in AccountGroup.objects.filter(company_id=company_id)}
+
+    asset_hierarchy_nodes, total_assets_val = _build_balance_sheet_hierarchy(None, company_groups, asset_balances_map, 0)
+    liability_hierarchy_nodes, total_liabilities_val = _build_balance_sheet_hierarchy(None, company_groups, liability_balances_map, 0)
+    equity_hierarchy_nodes, total_explicit_equity_val = _build_balance_sheet_hierarchy(None, company_groups, equity_balances_map, 0)
+
+    retained_earnings_node_data: BalanceSheetNode = {
+        'id': RETAINED_EARNINGS_ACCOUNT_ID_PLACEHOLDER,
+        'name': str(RETAINED_EARNINGS_ACCOUNT_NAME_DISPLAY),
+        'type': 'account', 'level': 0,
+        'balance': retained_earnings_from_pl_accounts,
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         'currency': effective_report_currency,
         'account_number': None,
         'children': []
     }
+<<<<<<< HEAD
 
     equity_hierarchy.append(retained_earnings_node)  # Simple append from 2nd file
     total_equity = total_explicit_equity + retained_earnings_calculated
@@ -725,22 +1216,55 @@ def generate_balance_sheet(company_id: PK_TYPE, as_of_date: date, report_currenc
         'assets': {'hierarchy': asset_hierarchy, 'total': total_assets},
         'liabilities': {'hierarchy': liability_hierarchy, 'total': total_liabilities},
         'equity': {'hierarchy': equity_hierarchy, 'total': total_equity}
+=======
+    equity_hierarchy_nodes.append(retained_earnings_node_data)
+    total_equity_val = total_explicit_equity_val + retained_earnings_from_pl_accounts
+
+    balance_difference_val = total_assets_val - (total_liabilities_val + total_equity_val)
+    is_bs_balanced = abs(balance_difference_val) < Decimal('0.01')
+    if not is_bs_balanced:
+        logger.error(
+            f"Balance Sheet for Co ID {company_id} is OUT OF BALANCE! "
+            f"Assets: {total_assets_val}, Liabilities: {total_liabilities_val}, Equity: {total_equity_val}, "
+            f"Total L+E: {total_liabilities_val + total_equity_val}, Difference: {balance_difference_val}"
+        )
+
+    return {
+        'company_id': company_id,
+        'company_name': company_instance.name,
+        'as_of_date': as_of_date,
+        'report_currency': effective_report_currency,
+        'is_balanced': is_bs_balanced,
+        'balance_difference': balance_difference_val,
+        'assets': {'hierarchy': asset_hierarchy_nodes, 'total': total_assets_val},
+        'liabilities': {'hierarchy': liability_hierarchy_nodes, 'total': total_liabilities_val},
+        'equity': {'hierarchy': equity_hierarchy_nodes, 'total': total_equity_val}
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     }
 
 
 # =============================================================================
+<<<<<<< HEAD
 # Accounts Receivable (AR) Specific Report Functions (FROM SECOND FILE, UNCHANGED)
+=======
+# Accounts Receivable (AR) Specific Report Functions
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =============================================================================
 def generate_ar_aging_report(
         company_id: PK_TYPE,
         as_of_date: date,
         report_currency: Optional[str] = None,
         aging_buckets_days: Optional[List[int]] = None
+<<<<<<< HEAD
 ) -> Dict[str, Any]:  # FROM SECOND FILE
+=======
+) -> Dict[str, Any]:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     if not Company: raise ReportGenerationError("Company model not available.")
     try:
         company_instance = Company.objects.get(pk=company_id)
     except Company.DoesNotExist:
+<<<<<<< HEAD
         raise ReportGenerationError(f"Company ID {company_id} not found.")
 
     effective_report_currency = report_currency or company_instance.default_currency_code or 'USD'
@@ -850,6 +1374,130 @@ def generate_ar_aging_report(
         'grand_totals_by_bucket': grand_totals_by_bucket,
         'grand_total_due_all_customers': grand_total_due_all_customers,
         'effective_buckets_definition_for_debug': effective_buckets_def
+=======
+        raise ReportGenerationError(f"Company with ID {company_id} not found.")
+
+    effective_report_currency = report_currency or company_instance.default_currency_code
+    if not effective_report_currency:
+        effective_report_currency = 'USD'
+        logger.warning(
+            f"AR Aging Gen for Co ID {company_id}: No report_currency and no company default. Defaulting to USD.")
+
+    logger.info(
+        f"Generating AR Aging for Company ID {company_id} (Currency: {effective_report_currency}) as of {as_of_date}")
+
+    current_buckets_definition = aging_buckets_days if aging_buckets_days is not None else DEFAULT_AR_AGING_BUCKETS_DAYS
+    effective_buckets_definition = sorted(list(set([0] + current_buckets_definition)))
+
+    bucket_labels_list: List[str] = []
+    if not effective_buckets_definition:
+        bucket_labels_list.append(str(_("Total Due")))
+    else:
+        bucket_labels_list.append(str(_("Current")))
+        for i in range(len(effective_buckets_definition) - 1):
+            lower_b = effective_buckets_definition[i] + 1
+            upper_b = effective_buckets_definition[i + 1]
+            bucket_labels_list.append(f"{lower_b}-{upper_b} {str(_('Days'))}")
+        bucket_labels_list.append(f"{effective_buckets_definition[-1] + 1}+ {str(_('Days'))}")
+
+    potentially_outstanding_invoices = CustomerInvoice.objects.filter(
+        company_id=company_id,
+        invoice_date__lte=as_of_date,
+        status__in=[
+            InvoiceStatus.DRAFT.value, InvoiceStatus.SENT.value, InvoiceStatus.PARTIALLY_PAID.value,
+            InvoiceStatus.PAID.value, InvoiceStatus.OVERDUE.value
+        ]
+    ).select_related('customer')
+
+    ar_aging_data_map: DefaultDict[PK_TYPE, ARAgingEntry] = defaultdict(
+        lambda: ARAgingEntry(customer_pk=None, customer_name="", currency=effective_report_currency, # type: ignore
+                             buckets={label: ZERO_DECIMAL for label in bucket_labels_list}, total_due=ZERO_DECIMAL)
+    )
+    grand_totals_per_bucket: Dict[str, Decimal] = {label: ZERO_DECIMAL for label in bucket_labels_list}
+    grand_total_due_overall = ZERO_DECIMAL
+    conversion_errors_logged_ar_aging = set()
+
+    for invoice in potentially_outstanding_invoices:
+        if not invoice.customer:
+            logger.warning(
+                f"AR Aging Co {company_id}: Invoice {invoice.invoice_number or invoice.pk} is missing a customer. Skipping.")
+            continue
+
+        amount_paid_for_invoice_as_of_report_date = PaymentAllocation.objects.filter(
+            invoice=invoice,
+            payment__payment_date__lte=as_of_date,
+            payment__status__in=[
+                CorePaymentStatus.APPLIED.value,
+                CorePaymentStatus.COMPLETED.value,
+            ]
+        ).aggregate(
+            total_applied_specific_date=Coalesce(Sum('amount_applied'), ZERO_DECIMAL)
+        )['total_applied_specific_date']
+
+        invoice_outstanding_for_report = invoice.total_amount - amount_paid_for_invoice_as_of_report_date
+
+        if invoice_outstanding_for_report <= SMALL_TOLERANCE:
+            continue
+
+        invoice_due_date = invoice.due_date or invoice.invoice_date
+
+        days_overdue = (as_of_date - invoice_due_date).days
+
+        chosen_bucket_label_for_invoice: str
+        if days_overdue <= effective_buckets_definition[0]:
+            chosen_bucket_label_for_invoice = bucket_labels_list[0]
+        else:
+            assigned = False
+            for i in range(len(effective_buckets_definition) - 1):
+                if days_overdue > effective_buckets_definition[i] and days_overdue <= effective_buckets_definition[
+                    i + 1]:
+                    chosen_bucket_label_for_invoice = bucket_labels_list[i + 1]
+                    assigned = True
+                    break
+            if not assigned:
+                chosen_bucket_label_for_invoice = bucket_labels_list[-1]
+
+        outstanding_in_report_currency: Decimal
+        try:
+            outstanding_in_report_currency = _convert_currency(
+                company_id, invoice_outstanding_for_report, invoice.currency, effective_report_currency, as_of_date
+            )
+        except CurrencyConversionError as cce:
+            rate_key = (invoice.currency, effective_report_currency)
+            if rate_key not in conversion_errors_logged_ar_aging:
+                logger.warning(
+                    f"AR Aging Co {company_id}: Currency conversion error: {cce} for Invoice {invoice.invoice_number or invoice.pk}. "
+                    "Using original calculated outstanding amount.")
+                conversion_errors_logged_ar_aging.add(rate_key)
+            outstanding_in_report_currency = invoice_outstanding_for_report
+
+        customer_aging_entry = ar_aging_data_map[invoice.customer.pk]
+        if not customer_aging_entry['customer_pk']:
+            customer_aging_entry['customer_pk'] = invoice.customer.pk
+            customer_aging_entry['customer_name'] = invoice.customer.name
+
+        customer_aging_entry['buckets'][chosen_bucket_label_for_invoice] = \
+            customer_aging_entry['buckets'].get(chosen_bucket_label_for_invoice,
+                                                ZERO_DECIMAL) + outstanding_in_report_currency
+        customer_aging_entry['total_due'] += outstanding_in_report_currency
+
+        grand_totals_per_bucket[chosen_bucket_label_for_invoice] = \
+            grand_totals_per_bucket.get(chosen_bucket_label_for_invoice, ZERO_DECIMAL) + outstanding_in_report_currency
+        grand_total_due_overall += outstanding_in_report_currency
+
+    sorted_ar_aging_data = sorted(list(ar_aging_data_map.values()), key=lambda x: x['customer_name'])
+
+    return {
+        'company_id': company_id,
+        'company_name': company_instance.name,
+        'as_of_date': as_of_date,
+        'report_currency': effective_report_currency,
+        'bucket_labels': bucket_labels_list,
+        'aging_data': sorted_ar_aging_data,
+        'grand_totals_by_bucket': grand_totals_per_bucket,
+        'grand_total_due_all_customers': grand_total_due_overall,
+        'effective_buckets_definition_for_debug': effective_buckets_definition
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     }
 
 
@@ -859,13 +1507,19 @@ def generate_customer_statement(
         start_date: date,
         end_date: date,
         report_currency: Optional[str] = None
+<<<<<<< HEAD
 ) -> CustomerStatementData:  # FROM SECOND FILE, uses CustomerStatementData/Line
     if not Company or not Party: raise ReportGenerationError("Company or Party model not available.")
+=======
+) -> CustomerStatementData:
+    if not (Company and Party): raise ReportGenerationError("Company or Party model not available.")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     try:
         company_instance = Company.objects.get(pk=company_id)
         customer_instance = Party.objects.get(pk=customer_id, company_id=company_id,
                                               party_type=CorePartyType.CUSTOMER.value)
     except Company.DoesNotExist:
+<<<<<<< HEAD
         raise ReportGenerationError(f"Company ID {company_id} not found.")
     except Party.DoesNotExist:
         raise ReportGenerationError(f"Customer ID {customer_id} (Type: Customer) not found for company {company_id}.")
@@ -881,6 +1535,30 @@ def generate_customer_statement(
     conversion_errors_logged_stmt = set()
 
     invoices_qs = CustomerInvoice.objects.filter(
+=======
+        raise ReportGenerationError(f"Company with ID {company_id} not found.")
+    except Party.DoesNotExist:
+        raise ReportGenerationError(
+            f"Customer with ID {customer_id} (Type: Customer) not found for company {company_id}.")
+    except AttributeError:
+        logger.error(
+            "Customer Statement: Party model or CorePartyType enum might be missing 'party_type' or 'CUSTOMER' value.")
+        raise ReportGenerationError("Misconfiguration in Party model or CorePartyType enum for customer statement.")
+
+    effective_report_currency = report_currency or company_instance.default_currency_code
+    if not effective_report_currency:
+        effective_report_currency = 'USD'
+        logger.warning(
+            f"Customer Stmt Gen for Co ID {company_id}, Cust {customer_id}: No report_currency and no company default. Defaulting to USD.")
+
+    logger.info(
+        f"Generating Customer Statement for Co ID {company_id}, Customer {customer_id} (Currency: {effective_report_currency}) from {start_date} to {end_date}")
+
+    statement_transactions_raw: List[Dict[str, Any]] = []
+    conversion_errors_logged_cust_stmt = set()
+
+    customer_invoices = CustomerInvoice.objects.filter(
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         company_id=company_id, customer_id=customer_id,
         status__in=[
             InvoiceStatus.SENT.value, InvoiceStatus.PARTIALLY_PAID.value,
@@ -888,6 +1566,7 @@ def generate_customer_statement(
         ]
     ).order_by('invoice_date', 'pk')
 
+<<<<<<< HEAD
     for inv in invoices_qs:
         statement_lines_raw.append({
             'date': inv.invoice_date,
@@ -970,21 +1649,115 @@ def generate_customer_statement(
                 debit=debit_val, credit=credit_val, balance=running_balance_statement
             ))
     # Using CustomerStatementData from 2nd file
+=======
+    for inv in customer_invoices:
+        statement_transactions_raw.append({
+            'date': inv.invoice_date,
+            'type': str(_('Invoice')),
+            'ref': inv.invoice_number or f"Inv#{inv.pk}",
+            'orig_amount': inv.total_amount,
+            'orig_currency': inv.currency,
+            'debit_credit_factor': Decimal('1.0')
+        })
+
+    customer_payments_received = CustomerPayment.objects.filter(
+        company_id=company_id, customer_id=customer_id,
+        status__in=[
+            CorePaymentStatus.APPLIED.value,
+            CorePaymentStatus.PARTIALLY_APPLIED.value,
+            CorePaymentStatus.COMPLETED.value
+        ]
+    ).order_by('payment_date', 'pk')
+
+    for pmt in customer_payments_received:
+        statement_transactions_raw.append({
+            'date': pmt.payment_date,
+            'type': str(_('Payment')),
+            'ref': pmt.reference_number or f"Pmt#{pmt.pk}",
+            'orig_amount': pmt.amount_received,
+            'orig_currency': pmt.currency,
+            'debit_credit_factor': Decimal('-1.0')
+        })
+
+    statement_transactions_raw.sort(
+        key=lambda x: (x['date'], 0 if x['type'] == str(_('Invoice')) else 1))
+
+    opening_balance_val: Decimal = ZERO_DECIMAL
+    for item in statement_transactions_raw:
+        if item['date'] < start_date:
+            amount_for_ob = item['orig_amount'] * item['debit_credit_factor']
+            converted_ob_amount: Decimal
+            try:
+                converted_ob_amount = _convert_currency(company_id, amount_for_ob, item['orig_currency'],
+                                                        effective_report_currency, item['date'])
+            except CurrencyConversionError as cce:
+                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
+                if rate_key not in conversion_errors_logged_cust_stmt:
+                    logger.warning(
+                        f"Cust Stmt Co {company_id} Cust {customer_id}: OB conversion error for {item['ref']} on {item['date']}. Using unconverted. Error: {cce}")
+                    conversion_errors_logged_cust_stmt.add(rate_key)
+                converted_ob_amount = amount_for_ob
+            opening_balance_val += converted_ob_amount
+
+    processed_statement_lines_list: List[CustomerStatementLine] = []
+    current_running_balance = opening_balance_val
+
+    for item in statement_transactions_raw:
+        if item['date'] >= start_date and item['date'] <= end_date:
+            item_amount_in_orig_currency = item['orig_amount']
+            converted_item_amount: Decimal
+            try:
+                converted_item_amount = _convert_currency(company_id, item_amount_in_orig_currency,
+                                                          item['orig_currency'],
+                                                          effective_report_currency, item['date'])
+            except CurrencyConversionError as cce:
+                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
+                if rate_key not in conversion_errors_logged_cust_stmt:
+                    logger.warning(
+                        f"Cust Stmt Co {company_id} Cust {customer_id}: Line item conversion error for {item['ref']} on {item['date']}. Using unconverted. Error: {cce}")
+                    conversion_errors_logged_cust_stmt.add(rate_key)
+                converted_item_amount = item_amount_in_orig_currency
+
+            debit_value, credit_value = None, None
+            if item['debit_credit_factor'] > 0:
+                debit_value = converted_item_amount
+                current_running_balance += converted_item_amount
+            else:
+                credit_value = converted_item_amount
+                current_running_balance -= converted_item_amount
+
+            processed_statement_lines_list.append(CustomerStatementLine(
+                date=item['date'], transaction_type=item['type'], reference=item['ref'],
+                debit=debit_value, credit=credit_value, balance=current_running_balance
+            ))
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     return CustomerStatementData(
         customer_pk=customer_id, customer_name=customer_instance.name,
         statement_period_start=start_date, statement_period_end=end_date,
         report_currency=effective_report_currency,
+<<<<<<< HEAD
         opening_balance=opening_balance_statement.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'),
                                                            rounding=ROUND_HALF_UP),
         lines=processed_statement_lines,
         closing_balance=running_balance_statement.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'),
                                                            rounding=ROUND_HALF_UP)
+=======
+        opening_balance=opening_balance_val.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'), rounding=ROUND_HALF_UP),
+        lines=processed_statement_lines_list,
+        closing_balance=current_running_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'),
+                                                         rounding=ROUND_HALF_UP)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     )
 
 
 # =============================================================================
+<<<<<<< HEAD
 # NEW: Accounts Payable (AP) Specific Report Functions (FROM FIRST FILE)
 # These will use the generic AgingEntry, StatementLine, StatementData TypedDicts
+=======
+# Accounts Payable (AP) Specific Report Functions
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =============================================================================
 def generate_ap_aging_report(company_id: PK_TYPE, as_of_date: date, report_currency: Optional[str] = None,
                              aging_buckets_days: Optional[List[int]] = None) -> Dict[str, Any]:
@@ -1072,7 +1845,15 @@ def generate_ap_aging_report(company_id: PK_TYPE, as_of_date: date, report_curre
 
 
 def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_date: date, end_date: date,
+<<<<<<< HEAD
                               report_currency: Optional[str] = None) -> StatementData:
+=======
+                              report_currency: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Generates a complete and robust data structure for a vendor statement.
+    This version includes all fixes for data fetching, currency conversion, and number formatting.
+    """
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     if not (Company and Party): raise ReportGenerationError("Models missing.")
     try:
         company_instance = Company.objects.get(pk=company_id)
@@ -1090,6 +1871,10 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
     raw_lines: List[Dict[str, Any]] = []
     conversion_errors_logged_stmt_ven = set()
 
+<<<<<<< HEAD
+=======
+    # --- Fetching Bill Data ---
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     for bill in VendorBill.objects.filter(
             company_id=company_id, supplier_id=supplier_id,
             status__in=[VendorBillStatus.APPROVED.value, VendorBillStatus.PARTIALLY_PAID.value,
@@ -1099,9 +1884,18 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
             'date': bill.issue_date, 'type': str(_('Bill')),
             'ref': bill.bill_number or bill.supplier_bill_reference or f"Bill#{bill.pk}",
             'orig_amount': bill.total_amount, 'orig_currency': bill.currency,
+<<<<<<< HEAD
             'factor': 1  # Bill increases amount owed TO supplier
         })
 
+=======
+            'factor': 1
+        })
+
+    # --- FIX: Fetching CORRECT Payment Data ---
+    # Based on the AttributeError, we know only COMPLETED exists, not PAID.
+    # This now correctly reflects the available statuses in your enum.
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     for pmt in VendorPayment.objects.filter(
             company_id=company_id, supplier_id=supplier_id,
             status__in=[VendorPaymentStatus.COMPLETED.value]
@@ -1110,6 +1904,7 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
             'date': pmt.payment_date, 'type': str(_('Payment')),
             'ref': pmt.payment_number or f"Pmt#{pmt.pk}",
             'orig_amount': pmt.payment_amount, 'orig_currency': pmt.currency,
+<<<<<<< HEAD
             'factor': -1  # Payment decreases amount owed TO supplier
         })
 
@@ -1167,6 +1962,79 @@ def generate_vendor_statement(company_id: PK_TYPE, supplier_id: PK_TYPE, start_d
     )
 
 
+=======
+            'factor': -1
+        })
+
+    raw_lines.sort(
+        key=lambda x: (x['date'], 0 if x['type'] == str(_('Bill')) else (1 if x['type'] == str(_('Payment')) else 2)))
+
+    opening_balance = ZERO_DECIMAL
+    processed_lines = []
+
+    # Calculate Opening Balance with robust error handling
+    for item in raw_lines:
+        if item['date'] < start_date:
+            conv_amt = ZERO_DECIMAL
+            # FIX: Gracefully handle missing currency rates
+            try:
+                conv_amt = _convert_currency(company_id, item['orig_amount'], item['orig_currency'],
+                                             effective_report_currency, item['date'])
+            except CurrencyConversionError as e:
+                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
+                if rate_key not in conversion_errors_logged_stmt_ven:
+                    logger.warning(f"Vendor Stmt OB Calc - Co {company_id}: {e}. Defaulting to original amount.")
+                    conversion_errors_logged_stmt_ven.add(rate_key)
+                conv_amt = item['orig_amount']
+            opening_balance += conv_amt * item['factor']
+
+    # Process lines for the statement period with all fixes
+    running_balance = opening_balance
+    for item in raw_lines:
+        if start_date <= item['date'] <= end_date:
+            conv_amt = ZERO_DECIMAL
+            # FIX: Gracefully handle missing currency rates
+            try:
+                conv_amt = _convert_currency(company_id, item['orig_amount'], item['orig_currency'],
+                                             effective_report_currency, item['date'])
+            except CurrencyConversionError as e:
+                rate_key = (item['orig_currency'], effective_report_currency, item['date'])
+                if rate_key not in conversion_errors_logged_stmt_ven:
+                    logger.warning(f"Vendor Stmt Line Item - Co {company_id}: {e}. Defaulting to original amount.")
+                    conversion_errors_logged_stmt_ven.add(rate_key)
+                conv_amt = item['orig_amount']
+
+            # FIX: Populate the correct debit/credit columns
+            payment_or_debit = conv_amt if item['factor'] == -1 else None
+            bill_or_credit = conv_amt if item['factor'] == 1 else None
+
+            running_balance += conv_amt * item['factor']
+
+            # Create the dictionary for the template with all fixes
+            processed_lines.append({
+                'date': item['date'],
+                'transaction_type': item['type'],
+                'reference': item['ref'],
+                # FIX: Correctly format all numbers to prevent long decimals
+                'payment_or_debit': payment_or_debit.quantize(
+                    Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')) if payment_or_debit is not None else None,
+                'bill_or_credit': bill_or_credit.quantize(
+                    Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')) if bill_or_credit is not None else None,
+                'balance': running_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}'))
+            })
+
+    # Return a simple, flexible dictionary that the view can easily use
+    return {
+        'supplier': supplier_instance,
+        'opening_balance': opening_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')),
+        'lines': processed_lines,
+        'closing_balance': running_balance.quantize(Decimal(f'1e-{DEFAULT_AMOUNT_PRECISION}')),
+        'statement_period_start': start_date,
+        'statement_period_end': end_date,
+        'report_currency': effective_report_currency,
+        'report_currency_symbol': company_instance.default_currency_symbol or '$'
+    }
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =============================================================================
 # Placeholder function from the second file (UNCHANGED)
 # =============================================================================

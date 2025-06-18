@@ -12,6 +12,11 @@ from django.core.exceptions import ValidationError as DjangoValidationError, Obj
 from django.core.validators import MinValueValidator
 from django.conf import settings
 
+<<<<<<< HEAD
+=======
+from . import SMALL_TOLERANCE
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # --- Base Model & Company Import ---
 try:
     from .base import TenantScopedModel
@@ -262,10 +267,23 @@ class VendorBill(TenantScopedModel):
                                               violation_error_message=_("Non-draft bills must have a bill number."))]
 
     def __str__(self):
+<<<<<<< HEAD
         supp_name = self.supplier.name if self.supplier_id and hasattr(self, '_supplier_cache') else (
             Party.objects.get(pk=self.supplier_id).name if self.supplier_id else _("N/A Sup"))
         num = self.bill_number or self.supplier_bill_reference or f"PK:{self.pk or 'New'}"
         return f"Bill {num} from {supp_name} ({self.total_amount} {self.currency})"
+=======
+        # Use the system number first, then the supplier's number, then a fallback.
+        # This avoids adding the word "Bill" twice.
+        identifier = self.bill_number or self.supplier_bill_reference or f"Draft Bill #{self.pk}"
+
+        # Safely get the supplier's name.
+        supplier_name = "N/A Supplier"
+        if self.supplier:
+            supplier_name = self.supplier.name
+
+        return f"{identifier} - {supplier_name} ({self.total_amount} {self.currency})"
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     def _recalculate_derived_fields(self, perform_save: bool = False, _triggering_save: bool = False):
         """Recalculates all monetary sum fields from lines and payments. Optionally saves."""
@@ -403,6 +421,7 @@ class VendorBill(TenantScopedModel):
 
 
 # =============================================================================
+<<<<<<< HEAD
 # BillLine Model
 # =============================================================================
 class BillLine(TenantScopedModel):
@@ -433,11 +452,72 @@ class BillLine(TenantScopedModel):
         return f"Line for {bill_ref}: {desc_short} ({self.line_total_inclusive_tax})"
 
     def calculate_amounts(self):
+=======
+# BillLine Model (FINAL CORRECTED AND COMMENTED VERSION)
+# =============================================================================
+class BillLine(TenantScopedModel):
+    """
+    Represents a single line item on a VendorBill.
+    Each line item debits an expense or asset account.
+    """
+    # Foreign key to Company, inherited from TenantScopedModel but made explicit here
+    # to ensure it's not editable in the admin form directly. It is set programmatically.
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bill_lines_direct', editable=False)
+
+    # The crucial link to the parent VendorBill. CASCADE means if the bill is deleted,
+    # its lines are also deleted.
+    vendor_bill = models.ForeignKey(VendorBill, on_delete=models.CASCADE, related_name='lines',
+                                    verbose_name=_("Vendor Bill"))
+
+    # The account being debited by this line item (e.g., 'Office Supplies', 'Prepaid Rent').
+    expense_account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name='bill_lines_as_expense',
+                                        verbose_name=_("Expense/Asset Account"))
+
+    # Core details of the line item.
+    description = models.CharField(_("Description"), max_length=255)
+    quantity = models.DecimalField(_("Quantity"), max_digits=15, decimal_places=4, default=Decimal('1.0'))
+    unit_price = models.DecimalField(_("Unit Price (Excl. Tax)"), max_digits=15, decimal_places=4)
+    tax_amount_on_line = models.DecimalField(_("Tax Amount on Line"), max_digits=15, decimal_places=2,
+                                             default=ZERO_DECIMAL)
+    sequence = models.PositiveIntegerField(_("Line Sequence"), default=0,
+                                           help_text=_("Controls the display order of lines."))
+
+    # Calculated fields that are not meant to be edited directly by the user.
+    # They are computed in the calculate_amounts() method.
+    amount = models.DecimalField(_("Line Amount (Excl. Tax)"), max_digits=15, decimal_places=2, editable=False)
+    line_total_inclusive_tax = models.DecimalField(_("Line Total (Incl. Tax)"), max_digits=15, decimal_places=2,
+                                                   editable=False)
+
+    class Meta:
+        verbose_name = _("Vendor Bill Line")
+        verbose_name_plural = _("Vendor Bill Lines")
+        ordering = ['vendor_bill', 'sequence', 'id']
+
+    def __str__(self):
+        """
+        Provides a clear, human-readable string representation of the bill line,
+        which is useful in the Django admin and for debugging.
+        """
+        bill_ref = f"Bill PK:{self.vendor_bill_id}"
+        # Check if the parent bill object is fully loaded to get its number
+        if hasattr(self, 'vendor_bill') and self.vendor_bill:
+            bill_ref = self.vendor_bill.bill_number or self.vendor_bill.supplier_bill_reference or f"Bill PK:{self.vendor_bill.pk}"
+
+        desc = self.description or ""
+        # Create a shortened description for brevity
+        desc_short = (desc[:40] + '...') if len(desc) > 43 else desc
+
+        return f"Line for {bill_ref}: {desc_short} - {self.line_total_inclusive_tax}"
+
+    def calculate_amounts(self):
+        """Helper method to calculate the line's subtotal and total based on quantity, price, and tax."""
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         self.amount = ((self.quantity or ZERO_DECIMAL) * (self.unit_price or ZERO_DECIMAL)).quantize(Decimal('0.01'),
                                                                                                      rounding=ROUND_HALF_UP)
         self.line_total_inclusive_tax = (self.amount + (self.tax_amount_on_line or ZERO_DECIMAL)).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP)
 
+<<<<<<< HEAD
     def clean(self):  # clean for BillLine
         super().clean()  # company from TenantScopedModel will be set if context available
         errors = {}
@@ -503,6 +583,88 @@ class BillLine(TenantScopedModel):
             bill_to_update._recalculate_derived_fields(perform_save=True)
 
 
+=======
+    def clean(self):
+        """
+        Performs comprehensive model-level validation before an instance is saved.
+        This is where we enforce business rules and prevent crashes on new objects.
+        """
+        super().clean()
+        errors = {}
+
+        # --- Basic Validations (don't require database access) ---
+        if self.quantity is not None and self.quantity <= ZERO_DECIMAL:
+            errors['quantity'] = _("Quantity must be positive.")
+        if self.unit_price is not None and self.unit_price < ZERO_DECIMAL:
+            errors['unit_price'] = _("Unit price cannot be negative.")
+        if not self.expense_account_id:
+            errors['expense_account'] = _("Expense/Asset account is required.")
+        if errors:
+            raise DjangoValidationError(errors)
+
+        # --- Relational Validations (require database access) ---
+        # FIX: We only run these checks if the parent bill has been saved to the database (has a pk).
+        # This prevents a crash when creating a NEW bill with lines, as the parent doesn't exist yet.
+        if hasattr(self, 'vendor_bill') and self.vendor_bill and self.vendor_bill.pk:
+            try:
+                parent_bill = self.vendor_bill
+
+                # Check that the expense account belongs to the same company as the bill.
+                if self.expense_account_id:
+                    exp_acc = Account.objects.get(pk=self.expense_account_id)
+                    if exp_acc.company_id != parent_bill.company_id:
+                        errors['expense_account'] = _("Expense Account must belong to the same company as the Bill.")
+            except Account.DoesNotExist:
+                errors['expense_account'] = _("The selected Expense/Asset account was not found.")
+
+        if errors:
+            raise DjangoValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """
+        Overrides the default save method to inject critical custom logic.
+        1. Inherit the 'company' from the parent bill.
+        2. Calculate line amounts.
+        3. Trigger recalculation on the parent bill's totals.
+        """
+        # --- FIX: Inherit Company from Parent ---
+        # This is the crucial fix for the "company cannot be null" error. When a BillLine is
+        # saved as part of an inline formset, it doesn't automatically know its company.
+        # This code explicitly finds its parent bill and copies the company from there.
+        if self.vendor_bill_id and not self.company_id:
+            try:
+                # Most efficient: the formset attaches the parent object directly.
+                self.company = self.vendor_bill.company
+            except (AttributeError, VendorBill.DoesNotExist):
+                # Fallback: if the parent isn't a full object, query the DB.
+                try:
+                    self.company = VendorBill.objects.get(pk=self.vendor_bill_id).company
+                except VendorBill.DoesNotExist:
+                    # If parent still can't be found, let the database integrity check handle it.
+                    pass
+        # --- End of Fix ---
+
+        # Always calculate amounts before saving to ensure data is correct.
+        self.calculate_amounts()
+
+        # Call the original save method (from TenantScopedModel), which also runs full_clean().
+        super().save(*args, **kwargs)
+
+        # After saving this line, tell the parent bill to update its totals.
+        if self.vendor_bill_id and hasattr(self.vendor_bill, '_recalculate_derived_fields'):
+            self.vendor_bill._recalculate_derived_fields(perform_save=True)
+
+    def delete(self, *args, **kwargs):
+        """Overrides delete to ensure the parent bill's totals are updated."""
+        # Store the parent before deleting the line.
+        bill_to_update = self.vendor_bill if self.vendor_bill_id else None
+
+        super().delete(*args, **kwargs)
+
+        # After deletion, trigger the recalculation.
+        if bill_to_update and hasattr(bill_to_update, '_recalculate_derived_fields'):
+            bill_to_update._recalculate_derived_fields(perform_save=True)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =============================================================================
 # VendorPayment Model
 # =============================================================================
@@ -515,10 +677,17 @@ class VendorPayment(TenantScopedModel):
         VOID = 'VOID', _('Void')
 
     class PaymentMethod(models.TextChoices):  # Local enum
+<<<<<<< HEAD
         BANK_TRANSFER = 'BANK_TRANSFER', _('Bank Transfer');
         CHECK = 'CHECK', _('Check');
         CREDIT_CARD = 'CREDIT_CARD', _('Credit Card (Company)');
         CASH = 'CASH', _('Cash');
+=======
+        BANK_TRANSFER = 'BANK_TRANSFER', _('Bank Transfer')
+        CHECK = 'CHECK', _('Check')
+        CREDIT_CARD = 'CREDIT_CARD', _('Credit Card (Company)')
+        CASH = 'CASH', _('Cash')
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         OTHER = 'OTHER', _('Other')
 
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='vendor_payments')
@@ -546,6 +715,7 @@ class VendorPayment(TenantScopedModel):
                                               related_name='related_vendor_payment')
 
     class Meta:
+<<<<<<< HEAD
         verbose_name = _("Vendor Payment");
         verbose_name_plural = _("Vendor Payments");
         ordering = ['company', '-payment_date', '-created_at']
@@ -554,10 +724,26 @@ class VendorPayment(TenantScopedModel):
     def __str__(self):
         supp_name = self.supplier.name if self.supplier_id and hasattr(self, '_supplier_cache') else (
             Party.objects.get(pk=self.supplier_id).name if self.supplier_id else "N/A Sup")
+=======
+        verbose_name = _("Vendor Payment")
+        verbose_name_plural = _("Vendor Payments")
+        ordering = ['company', '-payment_date', '-created_at']
+        unique_together = [('company', 'payment_number')]
+
+    def __str__(self):
+        supp_name = _("N/A Supplier")
+        if self.supplier_id:
+            try:
+                supp_name = (self.supplier.name if hasattr(self, 'supplier') and self.supplier else Party.objects.get(
+                    pk=self.supplier_id).name)
+            except ObjectDoesNotExist:
+                supp_name = f"Supplier ID {self.supplier_id} (Not Found)"
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         num = self.payment_number or f"PK:{self.pk or 'New'}"
         return f"Payment {num} to {supp_name} ({self.payment_amount} {self.currency})"
 
     def _recalculate_derived_fields(self, perform_save: bool = False, _triggering_save: bool = False):
+<<<<<<< HEAD
         """Recalculates allocated/unallocated amounts and updates status. Optionally saves."""
         if not self.pk: return
         logger.debug(f"VendorPayment PK {self.pk}: Recalculating derived fields (save={perform_save}).")
@@ -587,6 +773,43 @@ class VendorPayment(TenantScopedModel):
         if not effective_company and not self._state.adding and 'company' not in errors:
             errors['company'] = _("Payment company missing.")
         else:
+=======
+        if not self.pk: return
+        logger.debug(f"VendorPayment PK {self.pk}: Recalculating derived fields (save={perform_save}).")
+
+        # Use self.bill_allocations if the related_name is 'bill_allocations'
+        # from VendorPaymentAllocation's vendor_payment ForeignKey
+        self.allocated_amount = self.bill_allocations.all().aggregate(
+            total=Coalesce(Sum('allocated_amount'), ZERO_DECIMAL)
+        )['total']
+
+        calculated_unallocated = (self.payment_amount or ZERO_DECIMAL) - self.allocated_amount
+
+        amount_changed = self.unallocated_amount != calculated_unallocated
+
+        if amount_changed:
+            self.unallocated_amount = calculated_unallocated
+            logger.debug(f"VendorPayment PK {self.pk}: Unallocated amount updated to {self.unallocated_amount}")
+
+        if perform_save and amount_changed and not _triggering_save:
+            update_fields = ['allocated_amount', 'unallocated_amount', 'updated_at']
+            self.save(update_fields=update_fields, _recalculating_payment=True)
+            logger.debug(f"VendorPayment PK {self.pk}: Saved with recalculated amounts.")
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        effective_company: Optional[Company] = getattr(self, 'company', None)
+        if not effective_company and self.company_id:
+            try:
+                effective_company = Company.objects.get(pk=self.company_id)
+            except Company.DoesNotExist:
+                errors['company'] = _("Invalid Company ID.")
+
+        if not effective_company and not self._state.adding and 'company' not in errors:
+            errors['company'] = _("Payment company missing.")
+        elif effective_company:  # Only proceed if company context is established
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             if self.supplier_id:
                 try:
                     supplier = Party.objects.select_related('company').get(pk=self.supplier_id)
@@ -598,6 +821,10 @@ class VendorPayment(TenantScopedModel):
                     errors['supplier'] = _("Supplier not found.")
             elif not self._state.adding:
                 errors['supplier'] = _("Supplier is required.")
+<<<<<<< HEAD
+=======
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             if self.payment_account_id:
                 try:
                     pay_acc = Account.objects.select_related('company').get(pk=self.payment_account_id)
@@ -609,6 +836,7 @@ class VendorPayment(TenantScopedModel):
                     errors['payment_account'] = _("Payment Account not found.")
             elif not self._state.adding:
                 errors['payment_account'] = _("Payment Account is required.")
+<<<<<<< HEAD
             if self.payment_number and self.payment_number.strip():
                 qs = VendorPayment.objects.filter(company=effective_company, payment_number=self.payment_number)
                 if self.pk: qs = qs.exclude(pk=self.pk)
@@ -644,10 +872,81 @@ class VendorPayment(TenantScopedModel):
 # =============================================================================
 class VendorPaymentAllocation(TenantScopedModel):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='vendor_payment_allocations_direct')
+=======
+
+            if self.payment_number and self.payment_number.strip():
+                qs = VendorPayment.objects.filter(company=effective_company, payment_number=self.payment_number.strip())
+                if self.pk: qs = qs.exclude(pk=self.pk)
+                if qs.exists(): errors['payment_number'] = _("Payment number already used for this company.")
+
+        if self.payment_amount is not None and self.payment_amount <= ZERO_DECIMAL:
+            errors['payment_amount'] = _("Payment amount must be positive.")
+
+        if not self.currency:
+            if effective_company and hasattr(effective_company,
+                                             'default_currency_code') and effective_company.default_currency_code:
+                self.currency = effective_company.default_currency_code
+            elif hasattr(self, 'supplier') and self.supplier and hasattr(self.supplier,
+                                                                         'default_currency') and self.supplier.default_currency:
+                self.currency = self.supplier.default_currency
+            elif 'currency' not in errors:  # Avoid overwriting if already errored
+                errors['currency'] = _("Currency is required.")
+
+        if errors: raise DjangoValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        _recalculating = kwargs.pop('_recalculating_payment', False)
+        _skip_clean = kwargs.pop('skip_clean', False) or kwargs.pop('skip_model_full_clean', False)
+
+        if not self.pk:  # New payment
+            if not self.currency:
+                current_supplier = getattr(self, 'supplier', None)
+                current_company = getattr(self, 'company', None)
+                if current_supplier and hasattr(current_supplier,
+                                                'default_currency') and current_supplier.default_currency:
+                    self.currency = current_supplier.default_currency
+                elif current_company and hasattr(current_company,
+                                                 'default_currency_code') and current_company.default_currency_code:
+                    self.currency = current_company.default_currency_code
+                else:  # Last resort fallback, though clean() should catch missing currency
+                    self.currency = getattr(CurrencyType, 'USD', None).value if CurrencyType else "USD"
+
+            self.unallocated_amount = self.payment_amount if self.payment_amount is not None else ZERO_DECIMAL
+            self.allocated_amount = ZERO_DECIMAL
+
+        # If it's an existing payment, ensure its amounts are up-to-date before full_clean.
+        if self.pk and not _recalculating:
+            # This updates self.allocated_amount and self.unallocated_amount in memory
+            self._recalculate_derived_fields(perform_save=False)
+
+        if not _skip_clean and not _recalculating:
+            try:
+                self.full_clean()
+            except DjangoValidationError as e:
+                logger.error(
+                    f"Full clean failed for VendorPayment PK {self.pk}. Status: '{self.status}', Pmt Amt: {self.payment_amount}, Alloc: {self.allocated_amount}, Unalloc: {self.unallocated_amount}. Errors: {e.error_dict}")
+                raise
+
+        super().save(*args, **kwargs)
+
+        if not _recalculating and self.pk:
+            # Call recalculate again, this time with perform_save=True.
+            # This will save if the allocated_amount or unallocated_amount changed
+            # due to allocations being processed elsewhere or if the status needs update
+            # after the main save.
+            self._recalculate_derived_fields(perform_save=True, _triggering_save=True)
+
+
+# =============================================================================
+# VendorPaymentAllocation Model (FINAL CORRECTED AND COMMENTED VERSION)
+# =============================================================================
+class VendorPaymentAllocation(TenantScopedModel):
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     vendor_payment = models.ForeignKey(VendorPayment, on_delete=models.CASCADE, related_name='bill_allocations',
                                        verbose_name=_("Vendor Payment"))
     vendor_bill = models.ForeignKey(VendorBill, on_delete=models.CASCADE, related_name='payment_allocations',
                                     verbose_name=_("Vendor Bill"))
+<<<<<<< HEAD
     allocated_amount = models.DecimalField(_("Allocated Amount"), max_digits=20, decimal_places=2)
     allocation_date = models.DateField(_("Allocation Date"), default=timezone.now)
 
@@ -751,3 +1050,104 @@ class VendorPaymentAllocation(TenantScopedModel):
                 VendorBill.objects.get(pk=bill_to_update_pk)._recalculate_derived_fields(perform_save=True)
             except VendorBill.DoesNotExist:
                 pass
+=======
+    allocated_amount = models.DecimalField(_("Allocated Amount"), max_digits=20, decimal_places=2,
+                                           validators=[MinValueValidator(SMALL_TOLERANCE)])
+    allocation_date = models.DateField(_("Allocation Date"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("Vendor Payment Allocation")
+        verbose_name_plural = _("Vendor Payment Allocations")
+        unique_together = (('vendor_payment', 'vendor_bill'),)
+        ordering = ['-allocation_date']
+
+    def __str__(self):
+        p_ref = f"PmtPK:{self.vendor_payment_id}"
+        b_ref = f"BillPK:{self.vendor_bill_id}"
+        return f"Allocation: {p_ref} to {b_ref} - Amt: {self.allocated_amount}"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        if not (self.vendor_payment_id and self.vendor_bill_id):
+            return
+
+        try:
+            payment_instance = self.vendor_payment
+            bill_instance = self.vendor_bill
+        except (VendorPayment.DoesNotExist, VendorBill.DoesNotExist):
+            return
+
+        # --- Standard cross-object validation ---
+        if payment_instance.company_id != bill_instance.company_id:
+            errors['vendor_bill'] = _("Payment and Bill must belong to the same company.")
+        if payment_instance.supplier_id != bill_instance.supplier_id:
+            errors['vendor_bill'] = _("Payment and Bill must be for the same supplier.")
+        if payment_instance.currency != bill_instance.currency:
+            errors['vendor_bill'] = _("Payment and Bill must have the same currency.")
+
+        # --- FIX: Robust, stateless amount validation ---
+        if self.allocated_amount is not None and self.allocated_amount > ZERO_DECIMAL:
+            # 1. Check against available amount on the payment
+            available_on_payment = ZERO_DECIMAL
+            # This is the key fix: Check if the parent payment has a primary key (is saved).
+            if payment_instance.pk:
+                # If the parent is saved, we can safely query its other allocations.
+                other_allocations_sum = \
+                payment_instance.bill_allocations.exclude(pk=self.pk).aggregate(s=Sum('allocated_amount'))[
+                    's'] or ZERO_DECIMAL
+                available_on_payment = (payment_instance.payment_amount or ZERO_DECIMAL) - other_allocations_sum
+            else:
+                # If the parent is NEW, we can't query its allocations. The total available
+                # is simply the full amount of the new payment being created.
+                available_on_payment = payment_instance.payment_amount or ZERO_DECIMAL
+
+            if self.allocated_amount > (available_on_payment + SMALL_TOLERANCE):
+                errors['allocated_amount'] = _(
+                    "Amount applied (%(applied)s) exceeds payment's available amount (%(available)s)."
+                ) % {'applied': self.allocated_amount, 'available': available_on_payment}
+
+            # 2. Check against bill's due amount
+            other_allocations_on_bill = \
+            bill_instance.payment_allocations.exclude(pk=self.pk).aggregate(s=Sum('allocated_amount'))[
+                's'] or ZERO_DECIMAL
+            bill_due = (bill_instance.total_amount or ZERO_DECIMAL) - other_allocations_on_bill
+            if self.allocated_amount > (bill_due + SMALL_TOLERANCE):
+                errors['allocated_amount'] = _(
+                    "Amount applied (%(applied)s) exceeds bill's due amount (%(due)s)."
+                ) % {'applied': self.allocated_amount, 'due': bill_due}
+
+        if errors:
+            raise DjangoValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        # --- FIX: Inherit Company from Parent ---
+        # This is the same critical fix as in BillLine. It ensures the 'company' field
+        # is set before the model is saved to the database.
+        if self.vendor_payment_id and not self.company_id:
+            try:
+                self.company = self.vendor_payment.company
+            except (AttributeError, VendorPayment.DoesNotExist):
+                try:
+                    self.company = VendorPayment.objects.get(pk=self.vendor_payment_id).company
+                except VendorPayment.DoesNotExist:
+                    pass
+        # --- End of Fix ---
+
+        super().save(*args, **kwargs)
+
+        if self.vendor_payment_id:
+            self.vendor_payment._recalculate_derived_fields(perform_save=True)
+        if self.vendor_bill_id:
+            self.vendor_bill._recalculate_derived_fields(perform_save=True)
+
+    def delete(self, *args, **kwargs):
+        payment = self.vendor_payment
+        bill = self.vendor_bill
+        super().delete(*args, **kwargs)
+        if payment:
+            payment._recalculate_derived_fields(perform_save=True)
+        if bill:
+            bill._recalculate_derived_fields(perform_save=True)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c

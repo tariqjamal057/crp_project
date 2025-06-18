@@ -34,7 +34,11 @@ ALLOWED_HOSTS = [
     'leadstocompany-crp.onrender.com',  # Add your Render domain here
     '127.0.0.1',
     'localhost',
+<<<<<<< HEAD
     '150.242.202.207', 'charanbhim.duckdns.org'
+=======
+    '150.242.202.207', 'charanbhim.duckdns.org',
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 ]
 if BASE_DOMAIN and BASE_DOMAIN != 'localhost':
      ALLOWED_HOSTS.append(f'.{BASE_DOMAIN}') # e.g., '.example.com'
@@ -60,6 +64,10 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'company.apps.CompanyConfig', # <--- THIS IS THE CRUCIAL CHANGE
     'safedelete',
+<<<<<<< HEAD
+=======
+    'mathfilters',
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     # 3. Default Django apps
     'django.contrib.admin',
@@ -318,7 +326,11 @@ CORS_ALLOWED_ORIGINS = [
 
 
 CSRF_TRUSTED_ORIGINS = [
+<<<<<<< HEAD
     'https://leadstocompany-crp.onrender.com', 'https://charanbhim.duckdns.org'
+=======
+    'https://leadstocompany-crp.onrender.com',
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 ]
 
 
@@ -448,3 +460,19 @@ JAZZMIN_UI_TWEAKS = {
         "success": "btn-success",
     }
 }
+<<<<<<< HEAD
+=======
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # This is the key change
+    },
+}
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c

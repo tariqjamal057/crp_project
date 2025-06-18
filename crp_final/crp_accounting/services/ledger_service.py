@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.conf import settings
 
 # --- Model Imports ---
+<<<<<<< HEAD
 from ..models.journal import Voucher, VoucherLine, DrCrType, TransactionStatus
 from ..models.coa import Account
 # from ..models.party import Party # Only if voucher.party is directly used in ledger line construction
@@ -24,11 +25,28 @@ try:
     from company.models import Company
 except ImportError:
     Company = None
+=======
+# Ensure these paths are correct for your project structure
+from ..models.journal import Voucher, VoucherLine, DrCrType, TransactionStatus
+from ..models.coa import Account
+# from ..models.party import Party # Uncomment if directly used for particulars
+from crp_core.enums import AccountNature  # Assuming crp_core is an app at the same level or in PYTHONPATH
+
+# --- Company Import ---
+try:
+    from company.models import Company  # Adjust if your company app has a different path
+except ImportError:
+    Company = None  # Handle if Company app is optional or not found
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
+<<<<<<< HEAD
 CACHE_OPENING_BALANCE_TIMEOUT = getattr(settings, 'CACHE_OPENING_BALANCE_TIMEOUT', 900)
+=======
+CACHE_OPENING_BALANCE_TIMEOUT = getattr(settings, 'CACHE_OPENING_BALANCE_TIMEOUT', 900)  # Default 15 mins
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 ZERO_DECIMAL = Decimal('0.00')
 
 
@@ -58,6 +76,10 @@ def calculate_account_balance_upto(
     cache_key = f"acc_ob_{company_id}_{account_for_balance.pk}_{date_exclusive.isoformat()}"
     cached_balance = cache.get(cache_key)
     if cached_balance is not None:
+<<<<<<< HEAD
+=======
+        # logger.debug(f"Cache HIT for opening balance: Key='{cache_key}'")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         return Decimal(cached_balance)
 
     logger.debug(
@@ -90,9 +112,17 @@ def calculate_account_balance_upto(
         balance = credit_total - debit_total
     else:
         logger.error(
+<<<<<<< HEAD
             f"Co {company_id}, Acc PK {account_for_balance.pk} has unexpected nature '{account_for_balance.account_nature}'.")
         raise ValueError(
             f"Invalid account nature '{account_for_balance.account_nature}' for account (PK: {account_for_balance.pk}).")
+=======
+            f"Co {company_id}, Acc PK {account_for_balance.pk} has unexpected nature '{account_for_balance.account_nature}'. Cannot calculate balance accurately."
+        )
+        raise ValueError(
+            f"Invalid account nature '{account_for_balance.account_nature}' for account (PK: {account_for_balance.pk}). Cannot calculate balance."
+        )
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     try:
         cache.set(cache_key, str(balance), timeout=CACHE_OPENING_BALANCE_TIMEOUT)
@@ -144,11 +174,24 @@ def get_account_ledger_data(
         date_exclusive=start_date
     )
 
+<<<<<<< HEAD
+=======
+    # --- CORRECTED `select_related` ---
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     ledger_lines_query = VoucherLine.objects.filter(
         account_id=account_pk,
         voucher__company_id=company_id,
         voucher__status=TransactionStatus.POSTED.value
+<<<<<<< HEAD
     ).select_related('voucher').order_by('voucher__date', 'voucher__created_at', 'pk')
+=======
+    ).select_related(
+        'voucher'  # Corrected: voucher_type is not relational here
+    ).prefetch_related(
+        Prefetch('voucher__lines', queryset=VoucherLine.objects.select_related('account'))
+    ).order_by('voucher__date', 'voucher__created_at', 'pk')
+    # --- END CORRECTION ---
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     if start_date:
         ledger_lines_query = ledger_lines_query.filter(voucher__date__gte=start_date)
@@ -173,17 +216,61 @@ def get_account_ledger_data(
         if is_debit_line:
             balance_change = debit_amount if is_debit_nature_account else -debit_amount
             period_total_debit += debit_amount
+<<<<<<< HEAD
         else:  # is_credit_line
+=======
+        else:
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             balance_change = -credit_amount if is_debit_nature_account else credit_amount
             period_total_credit += credit_amount
 
         running_balance += balance_change
 
+<<<<<<< HEAD
+=======
+        # --- Determine Particulars (Contra Account Name) ---
+        particulars_text = ""
+
+        # Access prefetched lines for the current voucher.
+        all_voucher_lines_for_this_voucher = list(line.voucher.lines.all())
+
+        contra_accounts_names = []
+        for v_line in all_voucher_lines_for_this_voucher:
+            if v_line.pk != line.pk and v_line.account:  # Exclude the current line and ensure account exists
+                contra_accounts_names.append(v_line.account.account_name)
+
+        if contra_accounts_names:
+            if len(contra_accounts_names) == 1:
+                particulars_text = contra_accounts_names[0]
+            else:
+                # For multiple contra accounts, prioritize voucher narration, then line narration, then generic
+                if line.voucher.narration:
+                    particulars_text = line.voucher.narration
+                elif line.narration:
+                    particulars_text = line.narration
+                else:
+                    # You might want to join names if preferred:
+                    # particulars_text = ", ".join(sorted(list(set(contra_accounts_names))))
+                    particulars_text = _("Sundry Accounts")  # Or "As per details"
+        else:
+            # No contra-lines found (e.g. one-sided entry, data issue, or already handled by narration if it was set)
+            # Fallback to voucher narration or line narration if particulars_text is still empty
+            if not particulars_text:  # Check if it was already set by multi-account narration logic
+                particulars_text = line.voucher.narration or line.narration or _(
+                    "N/A")  # N/A or other appropriate default
+
+        # Final fallback if particulars_text is still empty after all attempts
+        if not particulars_text:
+            particulars_text = _("Details not specified")
+        # --- END Determine Particulars ---
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         entries.append({
             'line_pk': line.pk,
             'date': line.voucher.date,
             'voucher_pk': line.voucher.pk,
             'voucher_number': line.voucher.voucher_number or f"V#{line.voucher.pk}",
+<<<<<<< HEAD
             'voucher_type': line.voucher.get_voucher_type_display(),
             'narration': line.voucher.narration or line.narration or '',  # Combine narrations
             'reference': line.voucher.reference or '',
@@ -199,12 +286,52 @@ def get_account_ledger_data(
         "account_number": account_data_dict['account_number'],
         "account_name": account_data_dict['account_name'],
         "currency": account_data_dict['currency'],
+=======
+            'voucher_type_display': line.voucher.get_voucher_type_display(),
+            'particulars': particulars_text,
+            'narration': line.voucher.narration or line.narration or '',
+            'reference': line.voucher.reference or '',
+            'debit': debit_amount,
+            'credit': credit_amount,
+            'running_balance_display': {
+                'amount': running_balance,
+                'dr_cr': 'Dr' if (running_balance > ZERO_DECIMAL and is_debit_nature_account) or \
+                                 (running_balance < ZERO_DECIMAL and not is_debit_nature_account) else \
+                    'Cr' if (running_balance < ZERO_DECIMAL and is_debit_nature_account) or \
+                            (running_balance > ZERO_DECIMAL and not is_debit_nature_account) else \
+                        '',  # Empty if zero balance or for unambiguous zero
+                # Note: For credit nature accounts, a "positive" running_balance means Credit.
+                # A "negative" running_balance (less than zero) for a credit nature account means it has a debit balance.
+            }
+        })
+
+    closing_balance = running_balance
+    closing_balance_dr_cr = 'Dr' if (closing_balance > ZERO_DECIMAL and is_debit_nature_account) or \
+                                    (closing_balance < ZERO_DECIMAL and not is_debit_nature_account) else \
+        'Cr' if (closing_balance < ZERO_DECIMAL and is_debit_nature_account) or \
+                (closing_balance > ZERO_DECIMAL and not is_debit_nature_account) else \
+            ''
+
+    opening_balance_dr_cr = 'Dr' if (opening_balance > ZERO_DECIMAL and is_debit_nature_account) or \
+                                    (opening_balance < ZERO_DECIMAL and not is_debit_nature_account) else \
+        'Cr' if (opening_balance < ZERO_DECIMAL and is_debit_nature_account) or \
+                (opening_balance > ZERO_DECIMAL and not is_debit_nature_account) else \
+            ''
+
+    account_summary_for_response = {
+        "pk": account_data_dict['pk'],
+        "account_number": account_data_dict['account_number'],
+        "account_name": account_data_dict['account_name'],
+        "currency": account_data_dict['currency'],
+        "account_nature": account_data_dict['account_nature']
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     }
 
     return {
         'account': account_summary_for_response,
         'start_date': start_date,
         'end_date': end_date,
+<<<<<<< HEAD
         'opening_balance': opening_balance,
         'total_debit': period_total_debit,
         'total_credit': period_total_credit,
@@ -413,3 +540,11 @@ def get_account_ledger_data(
 #         'entries': entries,
 #         'closing_balance': closing_balance,
 #     }
+=======
+        'opening_balance_display': {'amount': opening_balance, 'dr_cr': opening_balance_dr_cr},
+        'total_debit': period_total_debit,
+        'total_credit': period_total_credit,
+        'entries': entries,
+        'closing_balance_display': {'amount': closing_balance, 'dr_cr': closing_balance_dr_cr},
+    }
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c

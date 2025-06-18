@@ -193,7 +193,21 @@
                         {% for tx in entries %} {# Changed from 'transactions' to 'entries' to match context variable from view #}
                         <tr class="{% cycle 'row1' 'row2' as ledger_row_colors %}"> {# Renamed cycle variable #}
                             <td>{{ tx.date|localize }}</td>
+<<<<<<< HEAD
                             <td class="left-align particulars-col">{{ tx.particulars }}</td>
+=======
+                            {# MODIFIED LINE BELOW #}
+                            <td class="left-align particulars-col">
+                                {% if tx.debit > 0 %}
+                                    To {{ tx.particulars }}
+                                {% elif tx.credit > 0 %}
+                                    By {{ tx.particulars }}
+                                {% else %}
+                                    {{ tx.particulars }} {# Fallback for cases where neither debit nor credit is set, or if particulars are already fully descriptive #}
+                                {% endif %}
+                            </td>
+                            {# END OF MODIFIED LINE #}
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
                             <td class="centered">{{ tx.voucher_type_display }}</td> {# Changed from tx.vch_type #}
                             <td>
                                 {# Ensure tx.voucher_pk and company.pk are available and valid for the URL #}

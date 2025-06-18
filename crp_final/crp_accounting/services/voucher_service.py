@@ -1,6 +1,10 @@
 # crp_accounting/services/voucher_service.py
 
 import logging
+<<<<<<< HEAD
+=======
+from datetime import date
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 from decimal import Decimal
 from django.db import transaction, IntegrityError
 from django.utils import timezone
@@ -806,4 +810,183 @@ def assign_voucher_number(voucher: Voucher, company: Company):
         logger.error(f"{log_prefix} Error from sequence_service: {e}", exc_info=True)
         if isinstance(e, DjangoValidationError):
             raise
+<<<<<<< HEAD
         raise VoucherWorkflowError(_("Failed to generate voucher number: %(error)s") % {'error': str(e)}) from e
+=======
+        raise VoucherWorkflowError(_("Failed to generate voucher number: %(error)s") % {'error': str(e)}) from e
+
+
+@transaction.atomic
+def create_reversing_voucher(
+        company_id: int,  # Changed to int for consistency
+        original_voucher_id: Union[int, str],  # Changed for consistency
+        user: settings.AUTH_USER_MODEL,  # User performing the reversal
+        reversal_date: Optional[date] = None,
+        reversal_voucher_type_value: str = VoucherType.GENERAL.value,  # Ensure this type exists
+        post_immediately: bool = False,  # If True, the new reversing voucher is also posted
+        reversal_narration_prefix: str = _("Reversal of:")  # Use the parameter
+) -> Voucher:
+    company_instance = get_object_or_404(Company, pk=company_id)
+    _check_role_permission(user, company_instance, 'create_reversal_voucher')
+
+    current_user_display = user.get_full_name() or user.get_username()
+    log_prefix = f"[VchReversal][Co:{company_instance.name}][User:{current_user_display}][OrigVch:{original_voucher_id}]"
+    logger.info(f"{log_prefix} Initiating reversal process.")
+
+    try:
+        # Ensure reversed_by_voucher is prefetched if you plan to use it in checks.
+        original_voucher = Voucher.objects.select_related(
+            'company', 'party', 'accounting_period', 'currency'  # Add currency if not already eager loaded
+        ).prefetch_related(
+            'lines__account', 'reversed_by_voucher'  # For checking if already reversed
+        ).get(pk=original_voucher_id, company=company_instance)
+    except Voucher.DoesNotExist:
+        logger.error(f"{log_prefix} Original voucher not found.")
+        raise VoucherWorkflowError(_("Original voucher to reverse not found or invalid for this company."))
+
+    if original_voucher.status != TransactionStatus.POSTED.value:
+        logger.warning(
+            f"{log_prefix} Original voucher {original_voucher.voucher_number} is not POSTED (Status: {original_voucher.get_status_display()}).")
+        raise VoucherWorkflowError(_("Only 'Posted' vouchers can be reversed. Original status: %(s)s") % {
+            's': original_voucher.get_status_display()})
+
+    if original_voucher.is_reversed:
+        # It's good to provide info about which voucher reversed it, if possible
+        rev_vch_num = "Unknown"
+        if hasattr(original_voucher, 'reversed_by_voucher') and original_voucher.reversed_by_voucher:
+            rev_vch_num = original_voucher.reversed_by_voucher.voucher_number or original_voucher.reversed_by_voucher.pk
+        logger.warning(
+            f"{log_prefix} Original voucher {original_voucher.voucher_number} already reversed by {rev_vch_num}.")
+        raise VoucherWorkflowError(_("Voucher '%(num)s' has already been reversed by voucher '%(rev_vch)s'.") % {
+            'num': original_voucher.voucher_number or original_voucher.pk,
+            'rev_vch': rev_vch_num
+        })
+
+    effective_reversal_date = reversal_date or timezone.now().date()
+    try:
+        reversal_period = _get_valid_accounting_period(company_instance, effective_reversal_date)
+    except DjangoValidationError as e:  # _get_valid_accounting_period raises DjangoValidationError
+        logger.error(
+            f"{log_prefix} Accounting period validation failed for date {effective_reversal_date}: {e.messages}")
+        # Convert to PeriodLockedError or re-raise as appropriate for your API
+        if "No open accounting period" in str(e):
+            raise PeriodLockedError(
+                _("No open accounting period for reversal date %(d)s.") % {'d': effective_reversal_date}) from e
+        raise  # Re-raise other DjangoValidationErrors
+
+    # Construct narration for the reversing voucher
+    new_narration = f"{reversal_narration_prefix} {original_voucher.voucher_number or original_voucher.pk}"
+    if original_voucher.narration:
+        new_narration += f" - Orig: {original_voucher.narration[:150]}"
+    new_narration = new_narration[:Voucher._meta.get_field('narration').max_length]
+
+    # Prepare lines for the reversing voucher
+    reversing_lines_data = []
+    for line in original_voucher.lines.all():
+        if not line.account or not line.account.is_active or not line.account.allow_direct_posting:
+            logger.error(
+                f"{log_prefix} Account {line.account.account_code if line.account else 'N/A'} on original voucher is invalid for reversal.")
+            raise VoucherWorkflowError(
+                _("Cannot reverse: Account '%(acc)s' on original voucher line is inactive, missing, or disallows direct posting.") % {
+                    'acc': line.account.account_name if line.account else 'Unknown Account'
+                }
+            )
+
+        reversing_lines_data.append({
+            'account_id': line.account_id,
+            'dr_cr': DrCrType.CREDIT.value if line.dr_cr == DrCrType.DEBIT.value else DrCrType.DEBIT.value,
+            'amount': line.amount,
+            'narration': (_("Reversal - %(orig_narr)s") % {'orig_narr': (line.narration or '')})[
+                         :VoucherLine._meta.get_field('narration').max_length]
+        })
+
+    if not reversing_lines_data:
+        logger.error(f"{log_prefix} Original voucher has no valid lines to reverse.")
+        raise VoucherWorkflowError(_("Original voucher has no valid lines to reverse."))
+
+    # Create the new reversing voucher as DRAFT first
+    # Assuming original_voucher.currency is the FK object, so original_voucher.currency_id
+    # If original_voucher.currency is just the currency code (char), then pass it directly.
+    # Check your Voucher model definition for currency.
+    # For this example, I'll assume original_voucher.currency is the Currency model instance.
+    if not original_voucher.currency:
+        logger.error(
+            f"{log_prefix} Original voucher {original_voucher.voucher_number} is missing currency information.")
+        raise VoucherWorkflowError(_("Original voucher is missing currency information, cannot create reversal."))
+
+    reversing_voucher = create_draft_voucher(
+        company_id=company_instance.id,
+        created_by_user=user,
+        voucher_type_value=reversal_voucher_type_value,
+        date=effective_reversal_date,
+        narration=new_narration,
+        # currency=original_voucher.currency, # If currency is a CharField
+        currency_id=original_voucher.currency_id,  # If currency is a ForeignKey to a Currency model
+        lines_data=reversing_lines_data,
+        party_pk=original_voucher.party_id,
+        reference=f"REV-{original_voucher.voucher_number or original_voucher.pk}"[
+                  :Voucher._meta.get_field('reference').max_length]
+    )
+    logger.info(f"{log_prefix} Draft Reversing Voucher {reversing_voucher.pk} created.")
+
+    # Link the reversing voucher to the original (is_reversal_for is set after reversing_voucher has a PK)
+    reversing_voucher.is_reversal_for = original_voucher
+    # Save this specific field.
+    reversing_voucher.save(update_fields=['is_reversal_for'])
+
+    # Log initial creation (as DRAFT)
+    _log_approval_action(
+        reversing_voucher, user, ApprovalActionType.SYSTEM.value,  # Or a specific "CREATED_REVERSAL_DRAFT"
+        TransactionStatus.DRAFT.value, TransactionStatus.DRAFT.value,  # from/to status for draft creation
+        _("Reversing voucher (Draft) created for original voucher: %(num)s") % {
+            'num': original_voucher.voucher_number or original_voucher.pk}
+    )
+
+    if post_immediately:
+        logger.info(f"{log_prefix} Attempting to post reversing voucher {reversing_voucher.pk} immediately.")
+        # User needs permission to approve and post
+        _check_role_permission(user, company_instance, 'approve_voucher')
+        _check_role_permission(user, company_instance, 'post_voucher')
+
+        # Assign voucher number (typically done on submission, but needed before posting)
+        assign_voucher_number(reversing_voucher, company_instance)  # This will save voucher_number if changed
+
+        # Validate for posting
+        _validate_voucher_for_posting(reversing_voucher, company_instance)  # This includes balance checks
+
+        original_status_for_log = reversing_voucher.status  # Should be DRAFT
+        current_time = timezone.now()
+        reversing_voucher.status = TransactionStatus.POSTED.value
+        reversing_voucher.posted_by = user
+        reversing_voucher.posted_at = current_time
+        reversing_voucher.approved_by = user  # User initiating immediate post is also approver
+        reversing_voucher.approved_at = current_time
+        reversing_voucher.updated_by = user
+
+        reversing_voucher.save(update_fields=[
+            'status', 'voucher_number', 'posted_by', 'posted_at',
+            'approved_by', 'approved_at', 'updated_by'
+        ])
+
+        _log_approval_action(
+            reversing_voucher, user, ApprovalActionType.APPROVED.value,  # Or SYSTEM_POSTED
+            original_status_for_log, reversing_voucher.status,
+            _("Reversing voucher auto-approved and posted for: %(num)s") % {
+                'num': original_voucher.voucher_number or original_voucher.pk}
+        )
+        logger.info(f"{log_prefix} Reversing Voucher {reversing_voucher.voucher_number} CREATED AND POSTED.")
+    else:
+        logger.info(
+            f"{log_prefix} Reversing Voucher {reversing_voucher.pk} remains in DRAFT status for normal workflow.")
+
+    # Mark original voucher as reversed and link it to the new reversing voucher
+    original_voucher.is_reversed = True
+    original_voucher.reversed_by_voucher = reversing_voucher  # Link back
+    original_voucher.updated_by = user
+    original_voucher.updated_at = timezone.now()
+    original_voucher.save(update_fields=['is_reversed', 'reversed_by_voucher', 'updated_by', 'updated_at'])
+    logger.info(
+        f"{log_prefix} Original Voucher {original_voucher.voucher_number} marked as reversed by {reversing_voucher.voucher_number or reversing_voucher.pk}.")
+
+    return reversing_voucher
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c

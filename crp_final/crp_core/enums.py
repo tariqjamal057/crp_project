@@ -62,6 +62,11 @@ class VoucherType(models.TextChoices):
     STOCK_JOURNAL = 'STOCK_JOURNAL', _('Stock Journal') # Pure inventory value/quantity adjustments (if tracking inventory)
     DEPRECIATION = 'DEPRECIATION', _('Depreciation')   # Recording fixed asset depreciation (often system-generated)
     # --- Potentially More Specific Types (Consider adding if needed) ---
+<<<<<<< HEAD
+=======
+    PURCHASE_REVERSAL = 'PURCHASE_REVERSAL', _('Purchase Reversal Voucher')
+    PAYMENT_REVERSAL = 'PAYMENT_REVERSAL', _('Payment Reversal Voucher')
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     # PAYROLL = 'PAYROLL', _('Payroll Voucher')       # For payroll processing entries
     # MANUFACTURING = 'MANUFACTURING', _('Manufacturing Journal') # If tracking production costs
     # FX_ADJUSTMENT = 'FX_ADJUSTMENT', _('FX Adjustment') # Forex gain/loss recognition

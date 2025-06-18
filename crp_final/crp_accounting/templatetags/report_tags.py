@@ -1,7 +1,15 @@
 # crp_accounting/templatetags/report_tags.py
+<<<<<<< HEAD
 from django import template
 from decimal import Decimal
 
+=======
+
+from django import template
+from decimal import Decimal
+
+# You only need to create the Library instance once per file.
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 register = template.Library()
 
 @register.filter(name='currency_format')
@@ -15,23 +23,39 @@ def currency_format(value, currency_symbol=""):
     try:
         # Ensure it's a Decimal for consistent formatting
         val = Decimal(value)
+<<<<<<< HEAD
         # Example: 2 decimal places, with currency symbol
         # You might want more sophisticated formatting based on locale
+=======
+        # 2 decimal places, with currency symbol and commas for thousands
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         return f"{currency_symbol}{val:,.2f}"
     except (TypeError, ValueError):
         return value # Return original value if conversion fails
 
+<<<<<<< HEAD
 from django import template
 
 register = template.Library()
 
 @register.filter(name='get_item')  # Registering the filter with the name 'get_item'
+=======
+@register.filter(name='get_item')
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 def get_item(dictionary, key):
     """
     Allows accessing dictionary items with a variable key in templates.
     Usage: {{ my_dictionary|get_item:variable_key }}
     or     {{ my_dictionary|get_item:"string_key" }}
     """
+<<<<<<< HEAD
     if hasattr(dictionary, 'get'):
         return dictionary.get(key)
     return None # Or raise an error, or return a d
+=======
+    # The hasattr check is a good practice to prevent errors if the passed
+    # object is not a dictionary.
+    if hasattr(dictionary, 'get'):
+        return dictionary.get(key)
+    return None # Return None if the object is not a dictionary or key doesn't exist
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c

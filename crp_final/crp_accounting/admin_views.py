@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 # crp_accounting/admin_views.py
 
+=======
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 import logging
 from datetime import date, timedelta
 from decimal import Decimal
@@ -256,7 +259,13 @@ def _write_bs_hierarchy_excel(
 ) -> int:
     current_row = start_row
     bold_font = Font(bold=True)
+<<<<<<< HEAD
     standard_number_format = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+=======
+    # Ensure currency_symbol is not None for formatting
+    actual_currency_symbol = currency_symbol if currency_symbol is not None else ""
+    standard_number_format = f'"{actual_currency_symbol}"#,##0.00;[Red]-"{actual_currency_symbol}"#,##0.00'
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     for node in nodes:
         indentation = "    " * (node.get('level', 0) + level_offset)
         node_name = str(node.get('name', 'N/A'))
@@ -275,7 +284,12 @@ def _write_bs_hierarchy_excel(
         current_row += 1
         child_nodes = node.get('children')
         if child_nodes:
+<<<<<<< HEAD
             current_row = _write_bs_hierarchy_excel(sheet, child_nodes, current_row, level_offset + 1, currency_symbol)
+=======
+            current_row = _write_bs_hierarchy_excel(sheet, child_nodes, current_row, level_offset + 1,
+                                                    currency_symbol)  # Pass original symbol
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     return current_row
 
 
@@ -730,7 +744,11 @@ def admin_customer_statement_view(request: HttpRequest, customer_pk: Optional[PK
 
 
 # =========================================
+<<<<<<< HEAD
 # EXCEL Download Views (No changes here)
+=======
+# EXCEL Download Views (CORRECTIONS APPLIED HERE)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =========================================
 @staff_member_required
 def download_trial_balance_excel(request: HttpRequest) -> HttpResponse:
@@ -749,7 +767,14 @@ def download_trial_balance_excel(request: HttpRequest) -> HttpResponse:
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = str(_("Trial Balance"))
+<<<<<<< HEAD
         currency_symbol = getattr(target_company, 'default_currency_symbol', '')
+=======
+
+        # CORRECTED currency_symbol logic
+        currency_symbol_candidate = getattr(target_company, 'default_currency_symbol', None)
+        currency_symbol = currency_symbol_candidate if currency_symbol_candidate is not None else ''
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
         sheet['A1'] = f"{str(_('Trial Balance Report'))} - {target_company.name}"
         sheet.merge_cells('A1:D1')
@@ -831,7 +856,15 @@ def download_profit_loss_excel(request: HttpRequest) -> HttpResponse:
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = str(_("Profit & Loss"))
+<<<<<<< HEAD
         currency_symbol = getattr(target_company, 'default_currency_symbol', '')
+=======
+
+        # CORRECTED currency_symbol logic
+        currency_symbol_candidate = getattr(target_company, 'default_currency_symbol', None)
+        currency_symbol = currency_symbol_candidate if currency_symbol_candidate is not None else ''
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         number_format_currency = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
         sheet['A1'] = f"{str(_('Profit & Loss Statement'))} - {target_company.name}"
         sheet.merge_cells('A1:C1')
@@ -928,7 +961,14 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = str(_("Balance Sheet"))
+<<<<<<< HEAD
         currency_symbol = getattr(target_company, 'default_currency_symbol', '')
+=======
+
+        # CORRECTED currency_symbol logic
+        currency_symbol_candidate = getattr(target_company, 'default_currency_symbol', None)
+        currency_symbol = currency_symbol_candidate if currency_symbol_candidate is not None else ''
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
         sheet['A1'] = f"{str(_('Balance Sheet'))} - {target_company.name}"
         sheet.merge_cells('A1:B1')
@@ -941,16 +981,29 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         sheet.column_dimensions['B'].width = 20
         current_row = 3
 
+<<<<<<< HEAD
+=======
+        number_format_currency_bs = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         current_row += 1
         sheet.cell(row=current_row, column=1, value=str(_("Assets"))).font = Font(bold=True, size=12)
         current_row += 1
         assets_data = report_data.get('assets', {})
         current_row = _write_bs_hierarchy_excel(sheet, assets_data.get('hierarchy', []), current_row, 0,
+<<<<<<< HEAD
                                                 currency_symbol)
         sheet.cell(row=current_row, column=1, value=str(_("Total Assets"))).font = Font(bold=True)
         total_assets_cell = sheet.cell(row=current_row, column=2, value=assets_data.get('total', ZERO))
         total_assets_cell.font = Font(bold=True)
         total_assets_cell.number_format = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+=======
+                                                currency_symbol)  # currency_symbol is now corrected
+        sheet.cell(row=current_row, column=1, value=str(_("Total Assets"))).font = Font(bold=True)
+        total_assets_cell = sheet.cell(row=current_row, column=2, value=assets_data.get('total', ZERO))
+        total_assets_cell.font = Font(bold=True)
+        total_assets_cell.number_format = number_format_currency_bs
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         total_assets_cell.alignment = Alignment(horizontal='right')
         current_row += 2
 
@@ -958,11 +1011,19 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         current_row += 1
         liabilities_data = report_data.get('liabilities', {})
         current_row = _write_bs_hierarchy_excel(sheet, liabilities_data.get('hierarchy', []), current_row, 0,
+<<<<<<< HEAD
                                                 currency_symbol)
         sheet.cell(row=current_row, column=1, value=str(_("Total Liabilities"))).font = Font(bold=True)
         total_liab_cell = sheet.cell(row=current_row, column=2, value=liabilities_data.get('total', ZERO))
         total_liab_cell.font = Font(bold=True)
         total_liab_cell.number_format = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+=======
+                                                currency_symbol)  # currency_symbol is now corrected
+        sheet.cell(row=current_row, column=1, value=str(_("Total Liabilities"))).font = Font(bold=True)
+        total_liab_cell = sheet.cell(row=current_row, column=2, value=liabilities_data.get('total', ZERO))
+        total_liab_cell.font = Font(bold=True)
+        total_liab_cell.number_format = number_format_currency_bs
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         total_liab_cell.alignment = Alignment(horizontal='right')
         current_row += 2
 
@@ -970,11 +1031,19 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         current_row += 1
         equity_data = report_data.get('equity', {})
         current_row = _write_bs_hierarchy_excel(sheet, equity_data.get('hierarchy', []), current_row, 0,
+<<<<<<< HEAD
                                                 currency_symbol)
         sheet.cell(row=current_row, column=1, value=str(_("Total Equity"))).font = Font(bold=True)
         total_equity_cell = sheet.cell(row=current_row, column=2, value=equity_data.get('total', ZERO))
         total_equity_cell.font = Font(bold=True)
         total_equity_cell.number_format = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+=======
+                                                currency_symbol)  # currency_symbol is now corrected
+        sheet.cell(row=current_row, column=1, value=str(_("Total Equity"))).font = Font(bold=True)
+        total_equity_cell = sheet.cell(row=current_row, column=2, value=equity_data.get('total', ZERO))
+        total_equity_cell.font = Font(bold=True)
+        total_equity_cell.number_format = number_format_currency_bs
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         total_equity_cell.alignment = Alignment(horizontal='right')
         current_row += 2
 
@@ -982,7 +1051,11 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         sheet.cell(row=current_row, column=1, value=str(_("Total Liabilities and Equity"))).font = Font(bold=True)
         total_liab_equity_cell = sheet.cell(row=current_row, column=2, value=total_liab_equity)
         total_liab_equity_cell.font = Font(bold=True)
+<<<<<<< HEAD
         total_liab_equity_cell.number_format = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+=======
+        total_liab_equity_cell.number_format = number_format_currency_bs
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         total_liab_equity_cell.alignment = Alignment(horizontal='right')
 
         if not report_data.get('is_balanced', True):
@@ -1007,6 +1080,7 @@ def download_balance_sheet_excel(request: HttpRequest) -> HttpResponse:
         logger.exception(f"Error exporting BS Excel for Co '{getattr(target_company, 'name', 'N/A')}'")
         return HttpResponse(str(_("Excel generation error.")), status=500)
 
+<<<<<<< HEAD
 
 # =========================================
 # PDF Download Views - MODIFIED
@@ -1136,6 +1210,8 @@ def download_balance_sheet_pdf(request: HttpRequest) -> HttpResponse:
         return HttpResponse(str(_("An unexpected PDF generation error occurred.")), status=500)
 
 
+=======
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 @staff_member_required
 def download_ar_aging_excel(request: HttpRequest) -> HttpResponse:
     target_company: Optional[Company] = None
@@ -1168,7 +1244,21 @@ def download_ar_aging_excel(request: HttpRequest) -> HttpResponse:
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = str(_("AR Aging"))
+<<<<<<< HEAD
         currency_symbol = getattr(target_company, 'default_currency_symbol', report_data.get('report_currency', ''))
+=======
+
+        # CORRECTED currency_symbol logic
+        company_sym = getattr(target_company, 'default_currency_symbol', None)
+        report_sym = report_data.get('report_currency', None)
+        if company_sym is not None:
+            currency_symbol = company_sym
+        elif report_sym is not None:
+            currency_symbol = report_sym
+        else:
+            currency_symbol = ''
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         number_format_currency = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
 
         sheet['A1'] = f"{str(_('AR Aging Report'))} - {target_company.name}"
@@ -1240,6 +1330,7 @@ def download_ar_aging_excel(request: HttpRequest) -> HttpResponse:
 
 
 @staff_member_required
+<<<<<<< HEAD
 def download_ar_aging_pdf(request: HttpRequest) -> HttpResponse:
     target_company: Optional[Company] = None
     if not XHTML2PDF_AVAILABLE:
@@ -1315,6 +1406,27 @@ def download_customer_statement_pdf(request: HttpRequest, customer_pk: PK_TYPE) 
         if start_date_val > end_date_val:
             raise ValueError(str(_("Start date cannot be after end date for the statement.")))
 
+=======
+def download_customer_statement_excel(request: HttpRequest, customer_pk: str) -> HttpResponse:
+    """
+    Generates and serves a Customer Statement as a styled Excel file.
+    This version fixes column widths and data placement.
+    """
+    if not OPENPYXL_AVAILABLE:
+        return HttpResponse(str(_("Excel export library (openpyxl) is not installed.")), status=501)
+
+    target_company: Optional[Company] = None
+    target_customer: Optional[Party] = None
+    try:
+        company_id_from_get = request.GET.get('company_id')
+        if not company_id_from_get:
+            raise ValueError("Company ID is required for download.")
+
+        target_company = get_object_or_404(Company, pk=company_id_from_get)
+        date_params = _get_validated_date_params_for_download(request, ['start_date', 'end_date'])
+        start_date_val, end_date_val = date_params['start_date'], date_params['end_date']
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         target_customer = get_object_or_404(
             Party.objects.select_related('company'),
             pk=customer_pk,
@@ -1330,6 +1442,7 @@ def download_customer_statement_pdf(request: HttpRequest, customer_pk: PK_TYPE) 
             report_currency=getattr(target_company, 'default_currency_code', 'USD')
         )
 
+<<<<<<< HEAD
         context = {
             **_get_admin_base_context(f"{str(_('Statement'))}: {target_customer.name} - {target_company.name}",
                                       request),
@@ -1374,6 +1487,125 @@ def download_customer_statement_pdf(request: HttpRequest, customer_pk: PK_TYPE) 
 # NEW: Accounts Payable (AP) HTML Report Views (Tenant Aware)
 # =============================================================================
 
+=======
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = str(_("Customer Statement"))
+
+        # --- STYLING SETUP ---
+        currency_symbol = report_data.get('report_currency_symbol', '$')
+        number_format_currency = f'"{currency_symbol}" #,##0.00'
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="004C99", end_color="004C99", fill_type="solid")
+        title_font = Font(bold=True, size=14)
+        center_align = Alignment(horizontal='center')
+        bold_font = Font(bold=True)
+
+        # --- WRITE TITLES ---
+        sheet['A1'] = f"{str(_('Statement For:'))} {target_customer.name}"
+        sheet.merge_cells('A1:G1');
+        sheet['A1'].font = title_font
+        sheet['A2'] = f"{str(_('Company:'))} {target_company.name}"
+        sheet.merge_cells('A2:G2')
+        sheet[
+            'A3'] = f"{str(_('Period:'))} {start_date_val.strftime('%d-%b-%Y')} to {end_date_val.strftime('%d-%b-%Y')}"
+        sheet.merge_cells('A3:G3')
+        sheet.append([])
+
+        # --- WRITE TABLE HEADERS ---
+        headers = ["Date", "Transaction Type", "Reference", "Debit", "Credit", "Balance", "Dr/Cr"]
+        sheet.append([str(_(h)) for h in headers])
+        header_row_num = sheet.max_row
+        for cell in sheet[header_row_num]:
+            cell.font = header_font;
+            cell.fill = header_fill
+
+        # --- WRITE DATA ROWS (Corrected to match web page structure) ---
+        ob = report_data.get('opening_balance', ZERO)
+        ob_drcr = 'Dr' if ob > 0 else ('Cr' if ob < 0 else '')
+        # Opening Balance Row
+        sheet.append([
+            start_date_val.strftime('%Y-%m-%d'),
+            str(_("Opening Balance")),
+            "",  # Reference is blank
+            None,  # Debit is blank
+            None,  # Credit is blank
+            ob,  # Balance
+            ob_drcr  # Dr/Cr
+        ])
+
+        # Transaction Rows
+        for line in report_data.get('lines', []):
+            balance = line.get('balance', ZERO)
+            drcr_indicator = 'Dr' if balance > 0 else ('Cr' if balance < 0 else '')
+            sheet.append([
+                line.get('date'),
+                line.get('transaction_type'),
+                line.get('reference'),
+                line.get('debit'),
+                line.get('credit'),
+                balance,
+                drcr_indicator
+            ])
+
+        # Closing Balance Row
+        cb = report_data.get('closing_balance', ZERO)
+        cb_drcr = 'Dr' if cb > 0 else ('Cr' if cb < 0 else '')
+        sheet.append([
+            end_date_val.strftime('%Y-%m-%d'),
+            str(_("Closing Balance")),
+            "", None, None,
+            cb,
+            cb_drcr
+        ])
+
+        # --- APPLY FORMATTING & BOLDING ---
+        data_start_row = header_row_num + 1
+        for row in sheet.iter_rows(min_row=data_start_row, max_row=sheet.max_row):
+            row[0].number_format = 'YYYY-MM-DD'  # Date column (A)
+            row[3].number_format = number_format_currency  # Debit column (D)
+            row[4].number_format = number_format_currency  # Credit column (E)
+            row[5].number_format = number_format_currency  # Balance column (F)
+            row[6].alignment = center_align  # Dr/Cr column (G)
+
+        # Bold the opening and closing balance rows
+        for cell in sheet[data_start_row]: cell.font = bold_font
+        for cell in sheet[sheet.max_row]: cell.font = bold_font
+
+        # --- NEW: AUTO-SIZE COLUMNS ---
+        for col_idx in range(1, sheet.max_column + 1):
+            column_letter = get_column_letter(col_idx)
+            max_length = 0
+            # Find the longest cell value in the column
+            for cell in sheet[column_letter]:
+                try:
+                    # Check if the cell has a value and is not a merged cell
+                    if cell.value and not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                except:
+                    pass
+            # Add some padding to the width
+            adjusted_width = (max_length + 2)
+            sheet.column_dimensions[column_letter].width = adjusted_width
+
+        # --- CREATE AND RETURN HTTP RESPONSE ---
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        filename = f"Customer_Statement_{target_customer.name.replace(' ', '_')}_{end_date_val.strftime('%Y%m%d')}.xlsx"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        workbook.save(response)
+        return response
+
+    except (ValueError, Http404) as e:
+        return HttpResponseBadRequest(str(e))
+    except Exception as e:
+        logger.exception(
+            f"Error generating Customer Statement Excel for Cust '{getattr(target_customer, 'name', customer_pk)}'")
+        return HttpResponse(str(_("An unexpected error occurred during Excel generation.")), status=500)
+# =============================================================================
+# NEW: Accounts Payable (AP) HTML Report Views (Tenant Aware)
+# =============================================================================
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 @staff_member_required
 def admin_ap_aging_report_view(request: HttpRequest) -> HttpResponse:
     """Displays the Accounts Payable Aging Report."""
@@ -1381,22 +1613,42 @@ def admin_ap_aging_report_view(request: HttpRequest) -> HttpResponse:
     target_company: Optional[Company] = None
     today = date.today()
 
+<<<<<<< HEAD
     context['as_of_date_param'] = request.GET.get('as_of_date', today.isoformat())
     context['aging_bucket_days_config_str'] = ",".join(
         map(str, reports_service.DEFAULT_AR_AGING_BUCKETS_DAYS))  # Reuse same bucket config for now
     context['report_data_available'] = False
+=======
+    # For form repopulation and defaults
+    context['as_of_date_param'] = request.GET.get('as_of_date', today.isoformat())
+    context['aging_bucket_days_config_str'] = request.GET.get(
+        'aging_buckets',
+        ",".join(map(str, reports_service.DEFAULT_AP_AGING_BUCKETS_DAYS))
+    )
+    context['report_data_available'] = False
+    context['as_of_date_to_display'] = None # Initialize
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     try:
         target_company = _get_company_for_report_or_raise(request)
         context['company'] = target_company
         context['title'] = f"{_('AP Aging Report')} - {target_company.name}"
 
+<<<<<<< HEAD
         as_of_date_val = date.fromisoformat(context['as_of_date_param'])
 
+=======
+        # Parse as_of_date from the parameter used for repopulation
+        # This will be today's date on first load, or submitted date on subsequent loads.
+        as_of_date_val = date.fromisoformat(context['as_of_date_param'])
+
+        # Determine aging buckets to use
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         buckets_str_from_get = request.GET.get('aging_buckets')
         if buckets_str_from_get:
             try:
                 aging_buckets_to_use = [int(b.strip()) for b in buckets_str_from_get.split(',') if b.strip()]
+<<<<<<< HEAD
             except ValueError:
                 aging_buckets_to_use = reports_service.DEFAULT_AR_AGING_BUCKETS_DAYS; messages.error(request,
                                                                                                      _("Invalid aging buckets format."))
@@ -1430,11 +1682,75 @@ def admin_ap_aging_report_view(request: HttpRequest) -> HttpResponse:
         context['report_error'] = _("Unexpected error.")
 
     if 'opts' not in context: context['opts'] = Company._meta if Company else Account._meta
+=======
+                # Update config_str to reflect what was parsed from GET
+                context['aging_bucket_days_config_str'] = buckets_str_from_get
+            except ValueError:
+                aging_buckets_to_use = reports_service.DEFAULT_AP_AGING_BUCKETS_DAYS
+                messages.error(request, _("Invalid aging buckets format. Using default AP buckets."))
+                # Reset config_str to default if parsing failed
+                context['aging_bucket_days_config_str'] = ",".join(map(str, reports_service.DEFAULT_AP_AGING_BUCKETS_DAYS))
+        else:
+            # If not in GET, it implies initial load or user cleared it.
+            # The value in context['aging_bucket_days_config_str'] is already set to default.
+            aging_buckets_to_use = [int(b.strip()) for b in context['aging_bucket_days_config_str'].split(',') if b.strip()]
+
+
+        # Generate report only if 'as_of_date' was explicitly in request.GET (form submission)
+        # OR if 'company_id' was in request.GET (company changed, potentially keep old date)
+        # AND target_company is successfully set.
+        # The main trigger for generation is the 'View Report' button click which includes 'as_of_date'.
+        if ('as_of_date' in request.GET or 'company_id' in request.GET) and target_company:
+            context['as_of_date_to_display'] = as_of_date_val # Set for template display
+
+            report_data = reports_service.generate_ap_aging_report(
+                company_id=target_company.id,
+                as_of_date=as_of_date_val,
+                report_currency=getattr(target_company, 'default_currency_code', 'USD'),
+                aging_buckets_days=aging_buckets_to_use
+            )
+            context.update(report_data) # Adds keys like 'aging_data', 'bucket_labels', etc.
+            if report_data.get('aging_data'): # Check if there's actual data
+                context['report_data_available'] = True
+            # If no data, the template's "No outstanding payables..." message will show
+        elif target_company and not ('as_of_date' in request.GET):
+            # Company selected, but date not yet submitted for report generation.
+            # The template condition `{% if company and not as_of_date_to_display %}` will handle the message.
+            pass
+
+
+    except ValueError as ve: # Catches date.fromisoformat errors or errors from _get_company_for_report_or_raise
+        messages.error(request, str(ve))
+        context['report_error'] = str(ve)
+        context['as_of_date_to_display'] = None # Ensure this is not set on error
+        if request.user.is_superuser and ("Company ID" in str(ve) or "select an active company" in str(ve).lower()):
+            if Company: context['all_companies'] = Company.objects.filter(is_active=True).order_by('name')
+            context['show_company_selector'] = True
+    except (Http404, DjangoPermissionDenied) as e:
+        messages.error(request, str(e))
+        context['report_error'] = str(e)
+    except ReportGenerationError as rge:
+        messages.error(request, f"{_('Error generating AP Aging')}: {rge}")
+        context['report_error'] = f"{_('Error generating AP Aging')}: {rge}"
+    except Exception as e:
+        logger.exception(f"Error generating admin AP Aging for Co '{getattr(target_company, 'name', 'N/A')}'")
+        messages.error(request, _("Unexpected error generating AP Aging."))
+        context['report_error'] = _("Unexpected error.")
+
+    # Ensure 'opts' and other admin context vars are present
+    if 'opts' not in context: context['opts'] = getattr(Company, '_meta', None) if Company else getattr(Account, '_meta', None)
+    if request.user.is_superuser and 'all_companies' not in context and Company:
+         context['all_companies'] = Company.objects.filter(is_active=True).order_by('name')
+         context['show_company_selector'] = True
+
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     return render(request, 'admin/crp_accounting/reports/ap_aging_report.html', context)
 
 
 @staff_member_required
 def admin_vendor_statement_view(request: HttpRequest,
+<<<<<<< HEAD
                                 supplier_pk: Optional[PK_TYPE] = None) -> HttpResponse:  # Changed param name
     """Displays a Vendor/Supplier Statement."""
     context = _get_admin_base_context(_("Vendor Statement"), request)
@@ -1450,11 +1766,38 @@ def admin_vendor_statement_view(request: HttpRequest,
     supplier_pk_from_get = request.GET.get('supplier_id')  # Changed from customer_id
     effective_supplier_pk = supplier_pk or supplier_pk_from_get
     context['report_data_available'] = False
+=======
+                                supplier_pk: Optional[PK_TYPE] = None) -> HttpResponse:
+    """Displays a Vendor/Supplier Statement."""
+    context = _get_admin_base_context(_("Vendor Statement"), request)
+    target_company: Optional[Company] = None
+    target_supplier: Optional[Party] = None
+    today = date.today()
+    default_start_date = today.replace(day=1)
+    next_month_start = (default_start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+    default_end_date = next_month_start - timedelta(days=1)
+
+    context['start_date_param'] = request.GET.get('start_date', default_start_date.isoformat())
+    context['end_date_param'] = request.GET.get('end_date', default_end_date.isoformat())
+    supplier_pk_from_get = request.GET.get('supplier_id')
+    effective_supplier_pk = supplier_pk or supplier_pk_from_get
+    context['selected_supplier_id_param'] = str(effective_supplier_pk) if effective_supplier_pk else ''
+
+    context['report_data_available'] = False
+    context['start_date_to_display'] = None
+    context['end_date_to_display'] = None
+    context['selected_supplier'] = None
+    context['supplier'] = None
+    context['suppliers_for_selection'] = [] # Initialize as empty list
+    context['all_suppliers_for_company'] = [] # Initialize as empty list
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
     try:
         target_company = _get_company_for_report_or_raise(request)
         context['company'] = target_company
         context['title'] = f"{_('Vendor Statement')} - {target_company.name}"
+<<<<<<< HEAD
 
         if target_company:  # Only populate selector if company is known
             context['suppliers_for_selection'] = Party.objects.filter(  # Changed from customers
@@ -1468,10 +1811,30 @@ def admin_vendor_statement_view(request: HttpRequest,
                 messages.info(request, _("Please select a supplier to view the statement."))
                 context['show_supplier_selector'] = True  # Changed from show_customer_selector
         else:
+=======
+        logger.info(f"[VendorStmtView] Target company: {target_company.name}")
+
+        if target_company:
+            suppliers_qs = Party.objects.filter(
+                company=target_company,
+                party_type=CorePartyType.SUPPLIER.value,
+                is_active=True
+            ).order_by('name')
+            context['suppliers_for_selection'] = suppliers_qs
+            context['all_suppliers_for_company'] = suppliers_qs
+            logger.info(f"[VendorStmtView] Found {suppliers_qs.count()} suppliers for company {target_company.name}.")
+            if not suppliers_qs.exists():
+                logger.warning(f"[VendorStmtView] No active suppliers found for company {target_company.name}. Dropdown will be empty.")
+                # messages.info(request, _("No active suppliers found for this company.")) # Optional message
+
+        if effective_supplier_pk and context['start_date_param'] and context['end_date_param'] and target_company:
+            logger.info(f"[VendorStmtView] Attempting to generate statement for supplier PK: {effective_supplier_pk}")
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
             target_supplier = get_object_or_404(
                 Party.objects.select_related('company'),
                 pk=effective_supplier_pk,
                 company=target_company,
+<<<<<<< HEAD
                 party_type=CorePartyType.SUPPLIER.value  # Ensure it's a supplier
             )
             context['supplier'] = target_supplier  # Changed from customer
@@ -1486,11 +1849,33 @@ def admin_vendor_statement_view(request: HttpRequest,
             report_data = reports_service.generate_vendor_statement(  # Call AP specific service
                 company_id=target_company.id,
                 supplier_id=target_supplier.pk,  # Pass supplier_id
+=======
+                party_type=CorePartyType.SUPPLIER.value
+            )
+            context['supplier'] = target_supplier
+            context['selected_supplier'] = target_supplier
+            context['title'] = f"{_('Statement')}: {target_supplier.name} - {target_company.name}"
+            logger.info(f"[VendorStmtView] Target supplier: {target_supplier.name}")
+
+            start_date_val = date.fromisoformat(context['start_date_param'])
+            end_date_val = date.fromisoformat(context['end_date_param'])
+
+            if start_date_val > end_date_val:
+                raise DjangoValidationError(_("Start date cannot be after end date."))
+
+            context['start_date_to_display'] = start_date_val
+            context['end_date_to_display'] = end_date_val
+
+            report_data = reports_service.generate_vendor_statement(
+                company_id=target_company.id,
+                supplier_id=target_supplier.pk,
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
                 start_date=start_date_val,
                 end_date=end_date_val,
                 report_currency=getattr(target_company, 'default_currency_code', 'USD')
             )
             context.update(report_data)
+<<<<<<< HEAD
             context['report_data_available'] = True
 
     except ValueError as ve:
@@ -1522,6 +1907,72 @@ def admin_vendor_statement_view(request: HttpRequest,
     return render(request, 'admin/crp_accounting/reports/vendor_statement_report.html', context)
 
 
+=======
+            context['statement_data'] = report_data
+            if report_data.get('lines') is not None:
+                context['report_data_available'] = True
+                logger.info(f"[VendorStmtView] Statement generated successfully for {target_supplier.name}.")
+            else:
+                logger.info(f"[VendorStmtView] Statement generation for {target_supplier.name} resulted in no lines.")
+
+
+        elif target_company and not effective_supplier_pk and ('supplier_id' in request.GET or 'start_date' in request.GET or 'end_date' in request.GET):
+            messages.info(request, _("Please select a supplier to view the statement."))
+            logger.info("[VendorStmtView] Prompting user to select a supplier.")
+        elif target_company and not effective_supplier_pk :
+             # This case is when the page loads, company is known, but no supplier is selected yet.
+             # The template should show "Please select a supplier..." if this is the case.
+             logger.debug("[VendorStmtView] Company selected, no supplier chosen yet by user.")
+
+
+    except DjangoValidationError as dve:
+        error_msg = "; ".join(dve.messages) if hasattr(dve, 'messages') and isinstance(dve.messages, list) else str(dve)
+        messages.error(request, error_msg)
+        context['report_error'] = error_msg
+        logger.warning(f"[VendorStmtView] Validation error: {error_msg}")
+    except ValueError as ve: # Catches date.fromisoformat or errors from _get_company_for_report_or_raise
+        messages.error(request, str(ve))
+        context['report_error'] = str(ve)
+        logger.warning(f"[VendorStmtView] Value error: {str(ve)}")
+        if request.user.is_superuser and ("Company ID" in str(ve) or "select an active company" in str(ve).lower()):
+            if Company: context['all_companies'] = Company.objects.filter(is_active=True).order_by('name')
+            context['show_company_selector'] = True
+        # If company is set but error occurred, ensure supplier dropdown is still populated
+        elif target_company and not context.get('suppliers_for_selection'): # Check if already populated
+            suppliers_qs_err = Party.objects.filter(company=target_company, party_type=CorePartyType.SUPPLIER.value, is_active=True).order_by('name')
+            context['suppliers_for_selection'] = suppliers_qs_err
+            context['all_suppliers_for_company'] = suppliers_qs_err
+            logger.info(f"[VendorStmtView] Repopulated suppliers for {target_company.name} after ValueError.")
+    except Http404:
+        messages.error(request, _("Supplier or Company not found. Please check your selection or permissions."))
+        context['report_error'] = _("Supplier or Company not found.")
+        logger.warning("[VendorStmtView] Http404 encountered (Supplier or Company not found).")
+        if target_company and not context.get('suppliers_for_selection'):
+            suppliers_qs_404 = Party.objects.filter(company=target_company, party_type=CorePartyType.SUPPLIER.value, is_active=True).order_by('name')
+            context['suppliers_for_selection'] = suppliers_qs_404
+            context['all_suppliers_for_company'] = suppliers_qs_404
+            logger.info(f"[VendorStmtView] Repopulated suppliers for {target_company.name} after Http404.")
+    except DjangoPermissionDenied as e:
+        messages.error(request, str(e))
+        context['report_error'] = str(e)
+        logger.warning(f"[VendorStmtView] Permission denied: {str(e)}")
+    except ReportGenerationError as rge:
+        messages.error(request, f"{_('Error generating statement')}: {rge}")
+        context['report_error'] = f"{_('Error generating statement')}: {rge}"
+        logger.error(f"[VendorStmtView] ReportGenerationError: {rge}")
+    except Exception as e:
+        logger.exception(
+            f"[VendorStmtView] Unexpected error for Co '{getattr(target_company, 'name', 'N/A')}', Supp '{getattr(target_supplier, 'name', effective_supplier_pk)}'")
+        messages.error(request, _("Unexpected error generating statement."))
+        context['report_error'] = _("Unexpected error.")
+
+    if 'opts' not in context: context['opts'] = getattr(Party, '_meta', None) # Party model meta
+    if request.user.is_superuser and 'all_companies' not in context and Company:
+         context['all_companies'] = Company.objects.filter(is_active=True).order_by('name')
+         context['show_company_selector'] = True
+
+    return render(request, 'admin/crp_accounting/reports/vendor_statement_report.html', context)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 # =============================================================================
 # NEW: Accounts Payable (AP) Download Views (Tenant Aware)
 # =============================================================================
@@ -1548,8 +1999,24 @@ def download_ap_aging_excel(request: HttpRequest) -> HttpResponse:
         workbook = openpyxl.Workbook();
         sheet = workbook.active;
         sheet.title = str(_("AP Aging"))
+<<<<<<< HEAD
         currency_symbol = getattr(target_company, 'default_currency_symbol', report_data.get('report_currency', ''))
         # ... (Excel formatting similar to download_ar_aging_excel, but with "Supplier Name")
+=======
+
+        # CORRECTED currency_symbol logic
+        company_sym = getattr(target_company, 'default_currency_symbol', None)
+        report_sym = report_data.get('report_currency', None)
+        if company_sym is not None:
+            currency_symbol = company_sym
+        elif report_sym is not None:
+            currency_symbol = report_sym
+        else:
+            currency_symbol = ''
+
+        number_format_currency = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
         # Example Header
         sheet['A1'] = f"{str(_('AP Aging Report'))} - {target_company.name}"
         sheet.merge_cells(start_row=1, start_column=1, end_row=1,
@@ -1565,7 +2032,17 @@ def download_ap_aging_excel(request: HttpRequest) -> HttpResponse:
         excel_headers = [str(_("Supplier Name"))] + [str(label) for label in report_data.get('bucket_labels', [])] + [
             str(_("Total Due"))]
         sheet.append(excel_headers)
+<<<<<<< HEAD
         # ... (Apply styling to headers and data rows, similar to AR Aging Excel) ...
+=======
+        header_row_num = sheet.max_row
+        for col_idx, header_title in enumerate(excel_headers, 1):
+            cell = sheet.cell(row=header_row_num, column=col_idx, value=header_title)
+            cell.font = Font(bold=True)
+            cell.border = Border(bottom=Side(style='thin'))
+            cell.alignment = Alignment(horizontal='left' if col_idx == 1 else 'right')
+            sheet.column_dimensions[get_column_letter(col_idx)].width = 30 if col_idx == 1 else 18
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
         for entry in report_data.get('aging_data', []):  # aging_data from AP report will have 'supplier_name'
             row_values = [str(entry.get('party_name', 'N/A'))]  # Use 'party_name' from AgingEntry
@@ -1573,8 +2050,33 @@ def download_ap_aging_excel(request: HttpRequest) -> HttpResponse:
                 entry.get('buckets', {}).get(bucket_label, ZERO))
             row_values.append(entry.get('total_due', ZERO))
             sheet.append(row_values)
+<<<<<<< HEAD
             # ... (Apply number formatting to amount columns) ...
         # ... (Append Grand Totals row) ...
+=======
+            current_data_row = sheet.max_row
+            for col_idx in range(2, len(excel_headers) + 1):  # Start from 2nd col for amounts
+                sheet.cell(row=current_data_row, column=col_idx).number_format = number_format_currency
+                sheet.cell(row=current_data_row, column=col_idx).alignment = Alignment(horizontal='right')
+
+        sheet.append([])  # Empty row before totals
+
+        grand_total_row_values = [str(_("Grand Totals"))]
+        for bucket_label in report_data.get('bucket_labels', []):
+            grand_total_row_values.append(report_data.get('grand_totals_by_bucket', {}).get(bucket_label, ZERO))
+        grand_total_row_values.append(
+            report_data.get('grand_total_due_all_customers', ZERO))  # Field name might be different for AP
+        sheet.append(grand_total_row_values)
+        total_row_num = sheet.max_row
+        for col_idx in range(1, len(grand_total_row_values) + 1):
+            cell = sheet.cell(row=total_row_num, column=col_idx)
+            cell.font = Font(bold=True)
+            if col_idx > 1:
+                cell.number_format = number_format_currency
+                cell.alignment = Alignment(horizontal='right')
+            else:
+                cell.alignment = Alignment(horizontal='left')
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         filename = f"{target_company.name}_AP_Aging_{as_of_date_val.strftime('%Y%m%d')}.xlsx"
@@ -1589,6 +2091,7 @@ def download_ap_aging_excel(request: HttpRequest) -> HttpResponse:
         return HttpResponse(f"{str(_('Report error'))}: {rge}", status=500)
     except Exception as e:
         logger.exception(
+<<<<<<< HEAD
             f"Error exporting AP Aging Excel for Co '{getattr(target_company, 'name', 'N/A')}'"); return HttpResponse(
             str(_("Excel generation error.")), status=500)
 
@@ -1597,10 +2100,163 @@ def download_ap_aging_excel(request: HttpRequest) -> HttpResponse:
 def download_ap_aging_pdf(request: HttpRequest) -> HttpResponse:
     target_company: Optional[Company] = None
     if not XHTML2PDF_AVAILABLE: return HttpResponse(str(_("PDF export library is missing.")), status=501)
+=======
+            f"Error exporting AP Aging Excel for Co '{getattr(target_company, 'name', 'N/A')}'");
+        return HttpResponse(
+            str(_("Excel generation error.")), status=500)
+
+
+
+@staff_member_required
+def download_vendor_statement_excel(request: HttpRequest, supplier_pk: PK_TYPE) -> HttpResponse:
+    """
+    Generates and serves a Vendor Statement as an Excel file.
+    """
+    target_company: Optional[Company] = None
+    target_supplier: Optional[Party] = None
+    if not OPENPYXL_AVAILABLE:
+        return HttpResponse(str(_("Excel export library (openpyxl) is not installed.")), status=501)
+
+    try:
+        # 1. Get company, supplier, and date parameters (similar to the PDF function)
+        target_company = _get_company_for_report_or_raise(request)
+        date_params = _get_validated_date_params_for_download(request, ['start_date', 'end_date'])
+        start_date_val, end_date_val = date_params['start_date'], date_params['end_date']
+        if start_date_val > end_date_val:
+            raise ValueError(str(_("Start date cannot be after end date.")))
+
+        target_supplier = get_object_or_404(
+            Party.objects.select_related('company'),
+            pk=supplier_pk,
+            company=target_company,
+            party_type=CorePartyType.SUPPLIER.value
+        )
+
+        # 2. Generate the statement data using your existing service
+        report_data = reports_service.generate_vendor_statement(
+            company_id=target_company.id,
+            supplier_id=target_supplier.pk,
+            start_date=start_date_val,
+            end_date=end_date_val,
+            report_currency=getattr(target_company, 'default_currency_code', 'USD')
+        )
+
+        # 3. Create the Excel workbook and sheet
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = str(_("Vendor Statement"))
+
+        # Setup currency formatting
+        currency_symbol = report_data.get('report_currency_symbol', '$')
+        number_format_currency = f'"{currency_symbol}"#,##0.00;[Red]-"{currency_symbol}"#,##0.00'
+
+        # 4. Write Headers and Titles
+        sheet['A1'] = f"{str(_('Statement for Supplier:'))} {target_supplier.name}"
+        sheet.merge_cells('A1:F1')
+        sheet['A1'].font = Font(bold=True, size=16)
+
+        sheet['A2'] = f"{str(_('Company:'))} {target_company.name}"
+        sheet.merge_cells('A2:F2')
+
+        sheet[
+            'A3'] = f"{str(_('Period:'))} {start_date_val.strftime('%d-%m-%Y')} {str(_('to'))} {end_date_val.strftime('%d-%m-%Y')}"
+        sheet.merge_cells('A3:F3')
+
+        sheet.append([])  # Blank row
+
+        # Table Headers
+        headers = [
+            str(_("Date")), str(_("Transaction Type")), str(_("Reference")),
+            str(_("Payment / Debit Note")), str(_("Bill / Credit Note")), str(_("Balance Due to Supplier"))
+        ]
+        sheet.append(headers)
+        header_row_num = sheet.max_row
+        for col_idx, cell_value in enumerate(headers, 1):
+            cell = sheet.cell(row=header_row_num, column=col_idx)
+            cell.font = Font(bold=True)
+            cell.border = Border(bottom=Side(style='thin'))
+            cell.alignment = Alignment(horizontal='right' if col_idx > 3 else 'left')
+            # Set column widths
+            if col_idx == 1: sheet.column_dimensions[get_column_letter(col_idx)].width = 15
+            if col_idx == 2: sheet.column_dimensions[get_column_letter(col_idx)].width = 25
+            if col_idx == 3: sheet.column_dimensions[get_column_letter(col_idx)].width = 20
+            if col_idx in [4, 5, 6]: sheet.column_dimensions[get_column_letter(col_idx)].width = 22
+
+        # 5. Write Data Rows
+        # Opening Balance
+        opening_balance_row = [
+            start_date_val.strftime('%d-%m-%Y'),
+            str(_("Opening Balance")),
+            None, None, None,
+            report_data.get('opening_balance', ZERO)
+        ]
+        sheet.append(opening_balance_row)
+        sheet.cell(row=sheet.max_row, column=6).number_format = number_format_currency
+
+        # Transaction Lines
+        for line in report_data.get('lines', []):
+            row_data = [
+                line.get('date'),
+                line.get('transaction_type'),
+                line.get('reference'),
+                line.get('payment_or_debit'),
+                line.get('bill_or_credit'),
+                line.get('balance')
+            ]
+            sheet.append(row_data)
+            current_row = sheet.max_row
+            # Apply currency format to amount columns
+            sheet.cell(row=current_row, column=4).number_format = number_format_currency
+            sheet.cell(row=current_row, column=5).number_format = number_format_currency
+            sheet.cell(row=current_row, column=6).number_format = number_format_currency
+
+        # Closing Balance
+        closing_balance_row = [
+            None, None, None, None,
+            str(_("Closing Balance as of")) + f" {end_date_val.strftime('%d-%m-%Y')}",
+            report_data.get('closing_balance', ZERO)
+        ]
+        sheet.append(closing_balance_row)
+        closing_row_num = sheet.max_row
+        closing_label_cell = sheet.cell(row=closing_row_num, column=5)
+        closing_amount_cell = sheet.cell(row=closing_row_num, column=6)
+        closing_label_cell.font = Font(bold=True)
+        closing_amount_cell.font = Font(bold=True)
+        closing_amount_cell.number_format = number_format_currency
+        closing_amount_cell.alignment = Alignment(horizontal='right')
+
+        # 6. Create the HTTP response
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        filename = f"Vendor_Statement_{target_supplier.name.replace(' ', '_')}_{end_date_val.strftime('%Y%m%d')}.xlsx"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        workbook.save(response)
+        return response
+
+    except ValueError as ve:
+        return HttpResponseBadRequest(str(ve))
+    except (Http404, DjangoPermissionDenied) as e:
+        return HttpResponse(str(e), status=403 if isinstance(e, DjangoPermissionDenied) else 404)
+    except ReportGenerationError as rge:
+        return HttpResponse(f"{str(_('Report generation error'))}: {rge}", status=500)
+    except Exception as e:
+        logger.exception(
+            f"Error exporting Vendor Statement Excel for Co '{getattr(target_company, 'name', 'N/A')}', Supp '{getattr(target_supplier, 'name', supplier_pk)}'")
+        return HttpResponse(str(_("An unexpected error occurred during Excel generation.")), status=500)
+
+
+@staff_member_required
+def download_trial_balance_pdf(request: HttpRequest) -> HttpResponse:
+    """
+    Generates and serves the Trial Balance report as a clean PDF file.
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     try:
         target_company = _get_company_for_report_or_raise(request)
         date_params = _get_validated_date_params_for_download(request, ['as_of_date'])
         as_of_date_val = date_params['as_of_date']
+<<<<<<< HEAD
         buckets_str = request.GET.get('aging_buckets');
         aging_buckets_to_use = [int(b.strip()) for b in buckets_str.split(
             ',')] if buckets_str else reports_service.DEFAULT_AR_AGING_BUCKETS_DAYS
@@ -1641,10 +2297,44 @@ def download_vendor_statement_pdf(request: HttpRequest, supplier_pk: PK_TYPE) ->
     target_company: Optional[Company] = None;
     target_supplier: Optional[Party] = None
     if not XHTML2PDF_AVAILABLE: return HttpResponse(str(_("PDF export library is missing.")), status=501)
+=======
+
+        report_data = reports_service.generate_trial_balance_structured(
+            company_id=target_company.id, as_of_date=as_of_date_val
+        )
+        context = {
+            'company': target_company,
+            'report_title': _("Trial Balance Report"),
+            'as_of_date_param': as_of_date_val,  # **FIX:** Pass the date object directly
+            **report_data
+        }
+
+        # **FIX:** Point to the dedicated PDF template
+        pdf_template_path = 'admin/crp_accounting/reports/trial_balance_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"{target_company.name}_Trial_Balance_{as_of_date_val.strftime('%Y%m%d')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+    except Exception as e:
+        logger.exception("Error generating Trial Balance PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+
+
+@staff_member_required
+def download_profit_loss_pdf(request: HttpRequest) -> HttpResponse:
+    """
+    Generates and serves the Profit & Loss Statement as a clean PDF file.
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
     try:
         target_company = _get_company_for_report_or_raise(request)
         date_params = _get_validated_date_params_for_download(request, ['start_date', 'end_date'])
         start_date_val, end_date_val = date_params['start_date'], date_params['end_date']
+<<<<<<< HEAD
         if start_date_val > end_date_val: raise ValueError(str(_("Start date cannot be after end date.")))
 
         target_supplier = get_object_or_404(Party.objects.select_related('company'), pk=supplier_pk,
@@ -1682,6 +2372,295 @@ def download_vendor_statement_pdf(request: HttpRequest, supplier_pk: PK_TYPE) ->
             f"Error exporting Vendor Stmt PDF for Co '{getattr(target_company, 'name', 'N/A')}', Supp '{getattr(target_supplier, 'name', supplier_pk)}'"); return HttpResponse(
             str(_("PDF generation error.")), status=500)
 
+=======
+
+        report_data = reports_service.generate_profit_loss(
+            company_id=target_company.id, start_date=start_date_val, end_date=end_date_val
+        )
+        context = {
+            'company': target_company,
+            'report_title': _("Profit & Loss Statement"),
+            'start_date_param': start_date_val,  # **FIX:** Pass date object
+            'end_date_param': end_date_val,  # **FIX:** Pass date object
+            **report_data
+        }
+
+        # **FIX:** Point to the dedicated PDF template
+        pdf_template_path = 'admin/crp_accounting/reports/profit_loss_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"{target_company.name}_Profit_Loss_{end_date_val.strftime('%Y%m%d')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+    except Exception as e:
+        logger.exception("Error generating P&L PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+
+
+@staff_member_required
+def download_balance_sheet_pdf(request: HttpRequest) -> HttpResponse:
+    """
+    Generates and serves the Balance Sheet as a clean PDF file using a
+    professional side-by-side layout.
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library (xhtml2pdf) is not installed.")), status=501)
+
+    target_company: Optional[Company] = None
+    try:
+        # 1. Get Company and Date parameters
+        target_company = _get_company_for_report_or_raise(request)
+        date_params = _get_validated_date_params_for_download(request, ['as_of_date'])
+        as_of_date_val = date_params['as_of_date']
+
+        # 2. Generate the core report data from your service
+        report_data = reports_service.generate_balance_sheet(
+            company_id=target_company.id,
+            as_of_date=as_of_date_val,
+            report_currency=getattr(target_company, 'default_currency_code', 'USD')
+        )
+
+        # ====================================================================
+        # === THE FIX IS HERE: Calculate and add missing totals to the data ===
+        # ====================================================================
+        # Your service provides the main sections, but we need to compute the
+        # final combined total here before sending it to the template.
+        total_liabilities = report_data.get('liabilities', {}).get('total', ZERO)
+        total_equity = report_data.get('equity', {}).get('total', ZERO)
+
+        # Add the new key to the report_data dictionary
+        report_data['total_liabilities_and_equity'] = total_liabilities + total_equity
+        # Also ensure the currency symbol is available for the template
+        if 'report_currency_symbol' not in report_data:
+            report_data['report_currency_symbol'] = getattr(target_company, 'default_currency_symbol', '$')
+        # ====================================================================
+
+        # 3. Prepare the full context for the template
+        context = {
+            'company': target_company,
+            'report_title': _("Balance Sheet"),
+            'as_of_date_param': as_of_date_val,  # Pass the actual date object
+            **report_data  # Unpack all keys from report_data into the context
+        }
+
+        # 4. Point to the dedicated PDF template and render it
+        pdf_template_path = 'admin/crp_accounting/reports/balance_sheet_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        # 5. Create and return the final HTTP response
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"{target_company.name}_Balance_Sheet_{as_of_date_val.strftime('%Y%m%d')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    except (ValueError, Http404, DjangoPermissionDenied) as e:
+        # Handle expected errors gracefully
+        return HttpResponse(str(e), status=400)
+    except ReportGenerationError as rge:
+        logger.error(f"Report generation error for Balance Sheet PDF: {rge}")
+        return HttpResponse(f"Error generating report: {rge}", status=500)
+    except Exception as e:
+        # Log unexpected errors
+        logger.exception(
+            f"Unexpected error generating Balance Sheet PDF for Co '{getattr(target_company, 'name', 'N/A')}'")
+        return HttpResponse(str(_("An unexpected PDF generation error occurred.")), status=500)
+
+
+@staff_member_required
+def download_ar_aging_pdf(request: HttpRequest) -> HttpResponse:
+    """
+    Generates and serves the AR Aging report as a clean PDF file.
+    (Definitive version, written to match the service's output)
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+
+    try:
+        # 1. Get parameters
+        target_company = _get_company_for_report_or_raise(request)
+        date_params = _get_validated_date_params_for_download(request, ['as_of_date'])
+        as_of_date_val = date_params['as_of_date']
+
+        buckets_str = request.GET.get('aging_buckets')
+        aging_buckets_to_use = [int(b.strip()) for b in
+                                buckets_str.split(',')] if buckets_str else None  # Pass None to use default
+
+        # 2. Get data from your service
+        report_data = reports_service.generate_ar_aging_report(
+            company_id=target_company.id,
+            as_of_date=as_of_date_val,
+            aging_buckets_days=aging_buckets_to_use,
+            report_currency=getattr(target_company, 'default_currency_code', 'USD')
+        )
+
+        # 3. Build the context for the template
+        # This context now directly uses the keys from your service's return dictionary.
+        context = {
+            'company': target_company,
+            'report_title': _("AR Aging Report"),
+            'as_of_date_param': as_of_date_val,
+            'report_currency_symbol': report_data.get('report_currency_symbol', '$'),
+            'bucket_labels': report_data.get('bucket_labels', []),
+            'aging_data': report_data.get('aging_data', []),
+            'grand_totals_by_bucket': report_data.get('grand_totals_by_bucket', {}),
+            'grand_total_due_all_customers': report_data.get('grand_total_due_all_customers', 0),
+        }
+
+        # 4. Render the PDF using the dedicated template
+        pdf_template_path = 'admin/crp_accounting/reports/ar_aging_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"{target_company.name}_AR_Aging_{as_of_date_val.strftime('%Y%m%d')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    except (ValueError, Http404, DjangoPermissionDenied) as e:
+        return HttpResponse(str(e), status=400)
+    except Exception as e:
+        logger.exception("Error generating AR Aging PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+
+
+@staff_member_required
+def download_customer_statement_pdf(request: HttpRequest, customer_pk: PK_TYPE) -> HttpResponse:
+    """
+    Generates and serves the Customer Statement as a clean PDF file. (Corrected Currency)
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+
+    try:
+        # ... (Get parameters and report_data - this part is correct) ...
+        target_company = _get_company_for_report_or_raise(request)
+        target_customer = get_object_or_404(Party, pk=customer_pk, company=target_company,
+                                            party_type=CorePartyType.CUSTOMER.value)
+        date_params = _get_validated_date_params_for_download(request, ['start_date', 'end_date'])
+        start_date_val, end_date_val = date_params['start_date'], date_params['end_date']
+
+        report_data = reports_service.generate_customer_statement(
+            company_id=target_company.id,
+            customer_id=target_customer.pk,
+            start_date=start_date_val,
+            end_date=end_date_val,
+            report_currency=getattr(target_company, 'default_currency_code', 'USD')
+        )
+
+        # =======================================================================
+        # === THE CURRENCY FIX IS HERE                                        ===
+        # =======================================================================
+        # Determine the correct currency symbol to use, defaulting to the code.
+        report_currency = report_data.get('report_currency', 'INR')
+        currency_symbol = report_data.get('report_currency_symbol')
+        if not currency_symbol:
+            # If no symbol is provided (like for INR), we will just show the code.
+            # Or, leave it blank if you prefer no prefix at all.
+            currency_symbol = ""  # Let's use no symbol to match your web view.
+        # =======================================================================
+
+        context = {
+            'company': target_company,
+            'customer': target_customer,
+            'report_title': _("Customer Statement"),
+            'start_date_param': start_date_val,
+            'end_date_param': end_date_val,
+            'lines': report_data.get('lines', []),
+            'opening_balance': report_data.get('opening_balance', 0),
+            'closing_balance': report_data.get('closing_balance', 0),
+            'report_currency': report_currency,
+            'report_currency_symbol': currency_symbol,  # Pass the corrected symbol
+        }
+
+        pdf_template_path = 'admin/crp_accounting/reports/customer_statement_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"Statement_{target_customer.name.replace(' ', '_')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    except Exception as e:
+        logger.exception("Error generating Customer Statement PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+@staff_member_required
+def download_ap_aging_pdf(request: HttpRequest) -> HttpResponse:
+    """
+    Generates and serves the AP Aging report as a clean PDF file.
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+    try:
+        target_company = _get_company_for_report_or_raise(request)
+        date_params = _get_validated_date_params_for_download(request, ['as_of_date'])
+        as_of_date_val = date_params['as_of_date']
+
+        buckets_str = request.GET.get('aging_buckets')
+        aging_buckets_to_use = [int(b.strip()) for b in buckets_str.split(
+            ',')] if buckets_str else reports_service.DEFAULT_AP_AGING_BUCKETS_DAYS
+
+        report_data = reports_service.generate_ap_aging_report(
+            company_id=target_company.id, as_of_date=as_of_date_val, aging_buckets_days=aging_buckets_to_use
+        )
+        context = {
+            'company': target_company,
+            'report_title': _("AP Aging Report"),
+            'as_of_date_param': as_of_date_val,  # **FIX:** Pass date object
+            **report_data
+        }
+
+        # **FIX:** Point to the dedicated PDF template
+        pdf_template_path = 'admin/crp_accounting/reports/ap_aging_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"{target_company.name}_AP_Aging_{as_of_date_val.strftime('%Y%m%d')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+    except Exception as e:
+        logger.exception("Error generating AP Aging PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+
+
+@staff_member_required
+def download_vendor_statement_pdf(request: HttpRequest, supplier_pk: PK_TYPE) -> HttpResponse:
+    """
+    Generates and serves the Vendor Statement as a clean PDF file.
+    """
+    if not XHTML2PDF_AVAILABLE:
+        return HttpResponse(str(_("PDF export library is not installed.")), status=501)
+    try:
+        target_company = _get_company_for_report_or_raise(request)
+        target_supplier = get_object_or_404(Party, pk=supplier_pk, company=target_company,
+                                            party_type=CorePartyType.SUPPLIER.value)
+        date_params = _get_validated_date_params_for_download(request, ['start_date', 'end_date'])
+        start_date_val, end_date_val = date_params['start_date'], date_params['end_date']
+
+        report_data = reports_service.generate_vendor_statement(
+            company_id=target_company.id, supplier_id=target_supplier.pk, start_date=start_date_val,
+            end_date=end_date_val
+        )
+        context = {
+            'company': target_company,
+            'supplier': target_supplier,
+            'report_title': _("Vendor Statement"),
+            'start_date_param': start_date_val,  # **FIX:** Pass date object
+            'end_date_param': end_date_val,  # **FIX:** Pass date object
+            **report_data
+        }
+
+        # **FIX:** Point to the dedicated PDF template
+        pdf_template_path = 'admin/crp_accounting/reports/vendor_statement_pdf.html'
+        pdf_buffer = _render_to_pdf(pdf_template_path, context, request=request)
+
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
+        filename = f"Vendor_Statement_{target_supplier.name.replace(' ', '_')}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+    except Exception as e:
+        logger.exception("Error generating Vendor Statement PDF")
+        return HttpResponse(f"Error: {e}", status=500)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
 
 @staff_member_required
 def admin_reports_hub_view(request: HttpRequest) -> HttpResponse:
@@ -1700,5 +2679,9 @@ def admin_reports_hub_view(request: HttpRequest) -> HttpResponse:
             context['all_companies'] = []
     else:
         logger.debug(f"[ReportsHubView] User {user_name} is not SU, not populating all_companies.")
+<<<<<<< HEAD
     return render(request, 'admin/crp_accounting/reports_hub.html', context)
 
+=======
+    return render(request, 'admin/crp_accounting/reports_hub.html', context)
+>>>>>>> 6bf6cecba810d211bb58ec8cdc516eeae683c30c
