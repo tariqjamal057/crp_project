@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 /*global gettext, interpolate, ngettext, Actions*/
+=======
+/*global gettext, interpolate, ngettext*/
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
 'use strict';
 {
     function show(selector) {
@@ -62,7 +66,13 @@
         const counter = document.querySelector(options.counterContainer);
         // data-actions-icnt is defined in the generated HTML
         // and contains the total amount of objects in the queryset
+<<<<<<< HEAD
         const actions_icnt = Number(counter.dataset.actionsIcnt);
+=======
+        // GRAPPELLI CUSTOM: counterSpan is a different class
+        const counter_span = document.querySelector(options.counterSpan);
+        const actions_icnt = Number(counter_span.dataset.actionsIcnt);
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
         counter.textContent = interpolate(
             ngettext('%(sel)s of %(cnt)s selected', '%(sel)s of %(cnt)s selected', sel), {
                 sel: sel,
@@ -77,6 +87,7 @@
         }
     }
 
+<<<<<<< HEAD
     const defaults = {
         actionContainer: "div.actions",
         counterContainer: "span.action-counter",
@@ -86,6 +97,19 @@
         acrossClears: "div.actions span.clear",
         allToggleId: "action-toggle",
         selectedClass: "selected"
+=======
+    // GRAPPELLI CUSTOM: changed classes, added class for counterSpan
+    const defaults = {
+        actionContainer: "div.grp-changelist-actions",
+        counterSpan: "span.action-counter",
+        counterContainer: "li.grp-action-counter span.grp-action-counter",
+        allContainer: "div.grp-changelist-actions li.grp-all",
+        acrossInput: "div.grp-changelist-actions input.select-across",
+        acrossQuestions: "div.grp-changelist-actions li.grp-question",
+        acrossClears: "div.grp-changelist-actions li.grp-clear-selection",
+        allToggleId: "action-toggle",
+        selectedClass: "grp-selected"
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
     };
 
     window.Actions = function(actionCheckboxes, options) {
@@ -156,7 +180,12 @@
             });
         });
 
+<<<<<<< HEAD
         document.querySelector('#changelist-form button[name=index]').addEventListener('click', function(event) {
+=======
+        // GRAPPELLI CUSTOM: changed class
+        document.querySelector('#grp-changelist-form button[name=index]').addEventListener('click', function() {
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
             if (list_editable_changed) {
                 const confirmed = confirm(gettext("You have unsaved changes on individual editable fields. If you run an action, your unsaved changes will be lost."));
                 if (!confirmed) {
@@ -165,7 +194,12 @@
             }
         });
 
+<<<<<<< HEAD
         const el = document.querySelector('#changelist-form input[name=_save]');
+=======
+        // GRAPPELLI CUSTOM: changed class
+        const el = document.querySelector('#grp-changelist-form input[name=_save]');
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
         // The button does not exist if no fields are editable.
         if (el) {
             el.addEventListener('click', function(event) {
@@ -179,9 +213,12 @@
                 }
             });
         }
+<<<<<<< HEAD
         // Sync counter when navigating to the page, such as through the back
         // button.
         window.addEventListener('pageshow', (event) => updateCounter(actionCheckboxes, options));
+=======
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
     };
 
     // Call function fn when the DOM is loaded and ready. If it is already

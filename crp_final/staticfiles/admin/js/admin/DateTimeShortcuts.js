@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*global Calendar, findPosX, findPosY, get_format, gettext, gettext_noop, interpolate, ngettext, quickElement*/
 // Inserts shortcut buttons after all of the following:
 //     <input type="text" class="vDateField">
@@ -406,3 +407,8 @@
     window.addEventListener('load', DateTimeShortcuts.init);
     window.DateTimeShortcuts = DateTimeShortcuts;
 }
+=======
+// dropped
+// not used in grappelli
+// kept this file to prevent 404
+>>>>>>> d15895bcda58e9e5a1a3241ac2e73535be307723
