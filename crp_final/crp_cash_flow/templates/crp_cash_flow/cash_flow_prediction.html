@@ -1,0 +1,184 @@
+{% extends 'admin/base_site.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .cash-flow-container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .form-section, .results-section, .historical-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .results-table, .historical-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .results-table th, .results-table td,
+        .historical-table th, .historical-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .results-table th, .historical-table th {
+            background-color: #f2f2f2;
+        }
+        .inflow { color: green; font-weight: bold; }
+        .outflow { color: red; font-weight: bold; }
+        .net-flow { font-weight: bold; }
+        .error-message {
+            color: #d9534f;
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .info-message {
+            color: #31708f;
+            background-color: #d9edf7;
+            border: 1px solid #bce8f1;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        #cashFlowChart {
+            width: 100%;
+            height: 400px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="cash-flow-container">
+    <h1>{% translate "Cash Flow Prediction" %}</h1>
+
+    {% if messages %}
+        <ul class="messagelist">
+            {% for message in messages %}
+                <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    {% if error_message %}
+        <div class="error-message">{{ error_message }}</div>
+    {% endif %}
+
+    <div class="form-section">
+        <h2>{% translate "Select Prediction Period" %}</h2>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="button button-primary">{% translate "Generate Prediction" %}</button>
+        </form>
+    </div>
+
+    {% if prediction_data %}
+        <div class="results-section">
+            <h2>{% translate "Predicted Cash Flow" %}</h2>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>{% translate "Category" %}</th>
+                        <th>{% translate "Amount" %} ({{ company.default_currency_code }})</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{% translate "Predicted Total Inflow" %}</td>
+                        <td class="inflow">{{ prediction_data.predicted_inflow|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>{% translate "Predicted Total Outflow" %}</td>
+                        <td class="outflow">{{ prediction_data.predicted_outflow|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>{% translate "Predicted Net Cash Flow" %}</strong></td>
+                        <td class="net-flow">{{ prediction_data.predicted_net_flow|floatformat:2 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <canvas id="cashFlowChart"></canvas>
+        </div>
+    {% endif %}
+
+    {% if historical_data %}
+        <div class="historical-section">
+            <h2>{% translate "Historical Cash Flow Data" %} (Last 4+ Years)</h2>
+            <table class="historical-table">
+                <thead>
+                    <tr>
+                        <th>{% translate "Period" %}</th>
+                        <th>{% translate "Total Inflow" %} ({{ company.default_currency_code }})</th>
+                        <th>{% translate "Total Outflow" %} ({{ company.default_currency_code }})</th>
+                        <th>{% translate "Net Cash Flow" %} ({{ company.default_currency_code }})</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for summary in historical_data %}
+                    <tr>
+                        <td>{{ summary.period_label }}</td>
+                        <td class="inflow">{{ summary.total_inflow|floatformat:2 }}</td>
+                        <td class="outflow">{{ summary.total_outflow|floatformat:2 }}</td>
+                        <td class="net-flow">{{ summary.net_cash_flow|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4">{% translate "No historical data available for the selected period range." %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('cashFlowChart').getContext('2d');
+    const inflowData = {{ prediction_data.predicted_inflow|default:0 }};
+    const outflowData = {{ prediction_data.predicted_outflow|default:0 }};
+    const netFlowData = {{ prediction_data.predicted_net_flow|default:0 }};
+
+    const cashFlowChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Predicted Inflow', 'Predicted Outflow', 'Predicted Net Cash Flow'],
+            datasets: [{
+                label: 'Cash Flow',
+                data: [inflowData, outflowData, netFlowData],
+                backgroundColor: [
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(153, 102, 255, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(153, 102, 255, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

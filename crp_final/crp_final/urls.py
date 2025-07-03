@@ -41,4 +41,5 @@ urlpatterns = [
         include(('crp_accounting.urls', 'crp_accounting'), namespace='crp_accounting_api')
     ),
     path('api/company/', include('company.urls', namespace='company_api')),
+    path('cash-flow/', include('crp_cash_flow.urls')),
 ]

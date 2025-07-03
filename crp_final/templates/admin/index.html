@@ -210,6 +210,7 @@
                  <h5 class="tile-title">{% translate "Chart of Accounts" %}</h5>
              </a>
         </div>
+        
 
         {# Tile 4: Reports Hub #}
         <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
@@ -219,6 +220,15 @@
                  <div class="tile-icon-wrapper"><i class="fas fa-chart-pie tile-icon"></i></div> {# Changed icon #}
                  <h5 class="tile-title">{% translate "View Reports" %}</h5>
              </a>
+        </div>
+
+        {# Tile 4: Cash Flow Prediction #}
+        <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
+            {# Ensure 'crp_cash_flow:cash_flow_prediction' is the correct namespaced URL name #}
+            <a href="{% url 'crp_cash_flow:cash_flow_prediction' %}" class="action-tile">
+                <div class="tile-icon-wrapper"><i class="fas fa-chart-line tile-icon"></i></div> {# Changed icon to a line chart for cash flow #}
+                <h5 class="tile-title">{% translate "Cash Flow Prediction" %}</h5>
+            </a>
         </div>
 
         {# Tile 5: Company Management (for SU) or Profile (for others) #}

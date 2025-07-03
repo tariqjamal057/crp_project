@@ -30,13 +30,7 @@ BASE_DOMAIN = os.getenv('BASE_DOMAIN', None)
 # SECURITY WARNING: don't run with debug turned on in production!
 SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
-ALLOWED_HOSTS = [
-    'leadstocompany-crp.onrender.com',
-    '127.0.0.1',
-    'localhost',
-    '150.242.202.207',
-    'charanbhim.duckdns.org', # Keep this if needed
-]
+ALLOWED_HOSTS = ["*"]
 if BASE_DOMAIN and BASE_DOMAIN != 'localhost':
      ALLOWED_HOSTS.append(f'.{BASE_DOMAIN}') # e.g., '.example.com'
      ALLOWED_HOSTS.append(BASE_DOMAIN)
@@ -60,6 +54,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'company.apps.CompanyConfig', # <--- THIS IS THE CRUCIAL CHANGE
+    'crp_cash_flow',
     'safedelete',
     'mathfilters',
 
