@@ -1,10 +1,11 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 from datetime import date
+from company.models import Company
 
 class CashFlowPredictionForm(forms.Form):
     """
-    Form for users to select a period for cash flow prediction.
+    Form for users to select a period and company for cash flow prediction.
     """
     TIME_RANGE_CHOICES = [
         ('last_52_months', _('Last 52 Months')),
@@ -15,6 +16,12 @@ class CashFlowPredictionForm(forms.Form):
         ('1_day', _('Last 1 Day')),
         ('custom', _('Custom Date Range')),
     ]
+
+    company = forms.ModelChoiceField(
+        queryset=Company.objects.all(),
+        label=_("Select Company"),
+        empty_label=_("Select a company")
+    )
 
     time_range = forms.ChoiceField(
         choices=TIME_RANGE_CHOICES,
